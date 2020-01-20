@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+  <groupId>com.cometchat</groupId>
+  <artifactId>pro-android-chat-sdk</artifactId>
+  <versioning>
+    <latest>2.0.3-beta</latest>
+    <release>2.0.3-beta</release>
+    <versions>
+      <version>2.0.3-beta</version>
+    </versions>
+    <lastUpdated>20200120130519</lastUpdated>
+  </versioning>
+</metadata>
