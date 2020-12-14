@@ -53,7 +53,7 @@ repositories {
 ```
 2. Now open the app level build.gradle file and add the below line under the `dependencies` section:
 ``` groovy
-	implementation 'com.cometchat:cometchat-pro-android-dependencies:2.1.5'
+	implementation 'com.cometchat:cometchat-pro-android-dependencies:2.1.6'
 ```
 
 ### CometChat via gradle
