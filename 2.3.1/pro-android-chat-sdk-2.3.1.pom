@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.cometchat</groupId>
   <artifactId>pro-android-chat-sdk</artifactId>
-  <version>2.3.1-beta1</version>
+  <version>2.3.1</version>
   <packaging>aar</packaging>
   <dependencies>
     <dependency>
@@ -44,7 +44,7 @@
     <dependency>
       <groupId>com.cometchat</groupId>
       <artifactId>pro-android-calls-sdk</artifactId>
-      <version>2.0.2-beta3</version>
+      <version>2.0.2</version>
     </dependency>
     <dependency>
       <groupId>org.igniterealtime.smack</groupId>
@@ -84,7 +84,7 @@
     <dependency>
       <groupId>com.cometchat</groupId>
       <artifactId>pro-android-calls-sdk</artifactId>
-      <version>2.0.2-beta3</version>
+      <version>2.0.2</version>
     </dependency>
   </dependencies>
 </project>
