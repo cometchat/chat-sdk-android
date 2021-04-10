@@ -72,7 +72,7 @@ Now that the CometChat module is successfully added to your project, you need to
 allprojects {
 repositories {
     maven {
-      url "https://dl.bintray.com/cometchat/pro"
+      url "ttps://dl.cloudsmith.io/public/cometchat/cometchat-pro-android/maven/"
     }
   }
 }
