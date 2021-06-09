@@ -12,12 +12,12 @@
 
 # CometChat Android Chat SDK
 
-CometChat enables you to add voice, video & text chat for your website & app.
+CometChat enables you to add voice, video & text chat fo`r your website & app.
 This guide demonstrates how to add chat to an Android application using CometChat.
 
 
 [![Platform](https://img.shields.io/badge/Platform-Android-brightgreen)](#)
-<a href=" "> <img src="https://img.shields.io/badge/Version-3.0.0_beta4-important" /></a>
+<a href=" "> <img src="https://img.shields.io/badge/Version-3.0.0_beta5-important" /></a>
 ![GitHub repo size](https://img.shields.io/github/repo-size/cometchat-pro/android-chat-sdk)
 ![GitHub contributors](https://img.shields.io/github/contributors/cometchat-pro/android-chat-sdk)
 ![GitHub stars](https://img.shields.io/github/stars/cometchat-pro/android-chat-sdk?style=social)
@@ -81,7 +81,7 @@ repositories {
 
 ``` groovy
 dependencies {
-  implementation 'com.cometchat:cometchat-pro-android-dependencies:3.0.0-beta4'
+  implementation 'com.cometchat:cometchat-pro-android-dependencies:3.0.0-beta5'
 }
 ```
 </li><li>
@@ -93,7 +93,7 @@ Open the app level build.gradle file and <br/>
 
 ```groovy
 dependencies {
-  implementation 'com.cometchat:pro-android-chat-sdk:3.0.0-beta4'
+  implementation 'com.cometchat:pro-android-chat-sdk:3.0.0-beta5'
 }
 ```
 2. Add the below lines android section
