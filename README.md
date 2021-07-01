@@ -17,7 +17,7 @@ This guide demonstrates how to add chat to an Android application using CometCha
 
 
 [![Platform](https://img.shields.io/badge/Platform-Android-brightgreen)](#)
-<a href=" "> <img src="https://img.shields.io/badge/Version-2.3.5-important" /></a>
+<a href=" "> <img src="https://img.shields.io/badge/Version-2.4.0-important" /></a>
 ![GitHub repo size](https://img.shields.io/github/repo-size/cometchat-pro/android-chat-sdk)
 ![GitHub contributors](https://img.shields.io/github/contributors/cometchat-pro/android-chat-sdk)
 ![GitHub stars](https://img.shields.io/github/stars/cometchat-pro/android-chat-sdk?style=social)
@@ -81,7 +81,7 @@ repositories {
 
 ``` groovy
 dependencies {
-  implementation 'com.cometchat:cometchat-pro-android-dependencies:2.3.5'
+  implementation 'com.cometchat:cometchat-pro-android-dependencies:2.4.0'
 }
 ```
 </li><li>
@@ -93,7 +93,7 @@ Open the app level build.gradle file and <br/>
 
 ```groovy
 dependencies {
-  implementation 'com.cometchat:pro-android-chat-sdk:2.3.5'
+  implementation 'com.cometchat:pro-android-chat-sdk:2.4.0'
 }
 ```
 2. Add the below lines android section
@@ -106,6 +106,16 @@ android {
   }
 }
 ```
+## Please Note:
+**v2.4+ onwards, Voice & Video Calling functionality has been moved to a separate library. Please add the following dependency to your app level `build.gradle` file in case you plan on using the Voice & Video Calling feature.**
+
+```groovy
+dependencies {
+  implementation 'com.cometchat:pro-android-calls-sdk:{calling_module_latest_version}'
+}
+```
+To know the latest version of the Calling dependency, please check the [Calling documentation](https://prodocs.cometchat.com/docs/android-calling)
+
  You can refer to the below link for instructions on how to do so:<br/>
 [📝 Add CometChat Dependency](https://prodocs.cometchat.com/docs/android-quick-start#section-add-the-cometchat-dependency)
 </li>
