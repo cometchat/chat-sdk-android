@@ -12,7 +12,7 @@
 
 # CometChat Android Chat SDK
 
-CometChat enables you to add voice, video & text chat fo`r your website & app.
+CometChat enables you to add voice, video & text chat for your website & app.
 This guide demonstrates how to add chat to an Android application using CometChat.
 
 
@@ -106,6 +106,16 @@ android {
   }
 }
 ```
+## Please Note:
+**v2.4+ onwards, Voice & Video Calling functionality has been moved to a separate library. Please add the following dependency to your app level `build.gradle` file in case you plan on using the Voice & Video Calling feature.**
+
+```groovy
+dependencies {
+  implementation 'com.cometchat:pro-android-calls-sdk:{calling_module_latest_version}'
+}
+```
+To know the latest version of the Calling dependency, please check the [Calling documentation](https://prodocs.cometchat.com/docs/android-calling)
+
  You can refer to the below link for instructions on how to do so:<br/>
 [📝 Add CometChat Dependency](https://prodocs.cometchat.com/docs/android-quick-start#section-add-the-cometchat-dependency)
 </li>
