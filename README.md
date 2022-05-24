@@ -17,7 +17,7 @@ This guide demonstrates how to add chat to an Android application using CometCha
 
 
 [![Platform](https://img.shields.io/badge/Platform-Android-brightgreen)](#)
-<a href=" "> <img src="https://img.shields.io/badge/Version-3.0.6-important" /></a>
+<a href=" "> <img src="https://img.shields.io/badge/Version-3.0.5-important" /></a>
 ![GitHub repo size](https://img.shields.io/github/repo-size/cometchat-pro/android-chat-sdk)
 ![GitHub contributors](https://img.shields.io/github/contributors/cometchat-pro/android-chat-sdk)
 ![GitHub stars](https://img.shields.io/github/stars/cometchat-pro/android-chat-sdk?style=social)
