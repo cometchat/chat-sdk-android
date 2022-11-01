@@ -3,8 +3,8 @@
   <groupId>com.cometchat</groupId>
   <artifactId>pro-android-chat-sdk</artifactId>
   <versioning>
-    <latest>3.0.12</latest>
-    <release>3.0.12</release>
+    <latest>3.0.13-beta1</latest>
+    <release>3.0.13-beta1</release>
     <versions>
       <version>3.0.0-beta1</version>
       <version>3.0.0-beta2</version>
@@ -25,7 +25,8 @@
       <version>3.0.10</version>
       <version>3.0.11</version>
       <version>3.0.12</version>
+      <version>3.0.13-beta1</version>
     </versions>
-    <lastUpdated>20221011104522</lastUpdated>
+    <lastUpdated>20221101162003</lastUpdated>
   </versioning>
 </metadata>
