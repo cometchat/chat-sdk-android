@@ -3,7 +3,11 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.cometchat</groupId>
   <artifactId>pro-android-chat-sdk</artifactId>
+<<<<<<<< HEAD:3.0.13/pro-android-chat-sdk-3.0.13.pom
   <version>3.0.13</version>
+========
+  <version>3.0.13-beta4</version>
+>>>>>>>> e016fc3b6e722e973382c6b36ef762acf664f3ca:3.0.13-beta4/pro-android-chat-sdk-3.0.13-beta4.pom
   <packaging>aar</packaging>
   <dependencies>
     <dependency>
