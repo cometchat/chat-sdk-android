@@ -17,7 +17,7 @@ This guide demonstrates how to add chat to an Android application using CometCha
 
 
 [![Platform](https://img.shields.io/badge/Platform-Android-brightgreen)](#)
-<a href=" "> <img src="https://img.shields.io/badge/Version-2.4.3_beta1-important" /></a>
+<a href=" "> <img src="https://img.shields.io/badge/Version-4.0.0_beta1-important" /></a>
 ![GitHub repo size](https://img.shields.io/github/repo-size/cometchat-pro/android-chat-sdk)
 ![GitHub contributors](https://img.shields.io/github/contributors/cometchat-pro/android-chat-sdk)
 ![GitHub stars](https://img.shields.io/github/stars/cometchat-pro/android-chat-sdk?style=social)
@@ -60,11 +60,11 @@ To setup Android SDK, you  need to first register on CometChat Dashboard. [Click
 6. Now open the app level build.gradle file and under the dependencies section add the below line:<br/>
 
 ```groovy
-	implementation project(path: ':pro-android-chat-sdk-$version')
+	implementation project(path: ':chat-sdk-android-$version')
 ```
 where $version is the version of the aar downloaded.
 
-Now that the CometChat module is successfully added to your project, you need to follow the below steps to add CometChat Pro dependency bundle to your project.
+Now that the CometChat module is successfully added to your project, you need to follow the below steps to add CometChat dependency bundle to your project.
 
 1. Open the project level build.gradle file and in the `repositories` section under `allprojects` add the below line:
 
@@ -72,7 +72,7 @@ Now that the CometChat module is successfully added to your project, you need to
 allprojects {
 repositories {
     maven {
-      url "https://dl.cloudsmith.io/public/cometchat/cometchat-pro-android/maven/"
+      url "https://dl.cloudsmith.io/public/cometchat/cometchat/maven/"
     }
   }
 }
@@ -81,19 +81,19 @@ repositories {
 
 ``` groovy
 dependencies {
-  implementation 'com.cometchat:cometchat-pro-android-dependencies:2.4.3-beta1'
+  implementation 'com.cometchat:chat-sdk-android-dependencies:4.0.0'
 }
 ```
 </li><li>
 <b>CometChat via gradle</b>
-If you do not wish to add the CometChat Pro dependency as a module, you can directly add the CometChat Pro SDK to your project using gradle.
+If you do not wish to add the CometChat dependency as a module, you can directly add the CometChat SDK to your project using gradle.
 Open the app level build.gradle file and <br/>
 
 1. Add the below line in the dependencies section.
 
 ```groovy
 dependencies {
-  implementation 'com.cometchat:pro-android-chat-sdk:2.4.3-beta1'
+  implementation 'com.cometchat:chat-sdk-android:4.0.0'
 }
 ```
 2. Add the below lines android section
@@ -111,7 +111,7 @@ android {
 
 ```groovy
 dependencies {
-  implementation 'com.cometchat:pro-android-calls-sdk:{calling_module_latest_version}'
+  implementation 'com.cometchat:calls-sdk-android:{calling_module_latest_version}'
 }
 ```
 To know the latest version of the Calling dependency, please check the [Calling documentation](https://prodocs.cometchat.com/docs/android-calling)
@@ -203,7 +203,7 @@ String authKey = "AUTH_KEY"; // Replace with your App Auth Key
 
 <hr/>
 
-📝 Please refer to our [Developer Documentation](https://prodocs.cometchat.com/docs/android-quick-start) for more information on how to configure the CometChat Pro SDK and implement various features using the same.
+📝 Please refer to our [Developer Documentation](https://prodocs.cometchat.com/docs/android-quick-start) for more information on how to configure the CometChat SDK and implement various features using the same.
 
 <hr/>
 
