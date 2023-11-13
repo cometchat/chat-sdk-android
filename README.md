@@ -17,7 +17,7 @@ This guide demonstrates how to add chat to an Android application using CometCha
 
 
 [![Platform](https://img.shields.io/badge/Platform-Android-brightgreen)](#)
-<a href=" "> <img src="https://img.shields.io/badge/Version-4.0.2-important" /></a>
+<a href=" "> <img src="https://img.shields.io/badge/Version-4.0.3-important" /></a>
 ![GitHub repo size](https://img.shields.io/github/repo-size/cometchat-pro/android-chat-sdk)
 ![GitHub contributors](https://img.shields.io/github/contributors/cometchat-pro/android-chat-sdk)
 ![GitHub stars](https://img.shields.io/github/stars/cometchat-pro/android-chat-sdk?style=social)
@@ -81,7 +81,7 @@ repositories {
 
 ``` groovy
 dependencies {
-  implementation 'com.cometchat:chat-sdk-android-dependencies:4.0.2'
+  implementation 'com.cometchat:chat-sdk-android-dependencies:4.0.3'
 }
 ```
 </li><li>
@@ -93,7 +93,7 @@ Open the app level build.gradle file and <br/>
 
 ```groovy
 dependencies {
-  implementation 'com.cometchat:chat-sdk-android:4.0.2'
+  implementation 'com.cometchat:chat-sdk-android:4.0.3'
 }
 ```
 2. Add the below lines android section
@@ -210,7 +210,8 @@ String authKey = "AUTH_KEY"; // Replace with your App Auth Key
 
 ## Contributors :clap:
 Thanks to the following people who have contributed to this project:
-[👨‍💻 @adityagokula2210](https://github.com/adityagokula2210) 
+[👨‍💻 @adityagokula2210](https://github.com/adityagokula2210)
+[👨‍💻 @rohit-cometchat](https://github.com/rohit-cometchat)
 
 <hr/>
 
