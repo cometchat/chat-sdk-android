@@ -1,14 +1,6 @@
-<div style="width:100%">
-<div style="width:100%">
-	<div style="width:50%; display:inline-block">
-		<p align="center">
-		<img style="text-align:center" width="180" height="180" alt="" src="https://avatars2.githubusercontent.com/u/45484907?s=200&v=4">	
-		</p>	
-	</div>	
-</div>
-</br>
-</br>
-</div>
+<p align="center">
+  <img alt="CometChat" src="https://assets.cometchat.io/website/images/logos/banner.png">
+</p>
 
 # CometChat Android Chat SDK
 
@@ -208,17 +200,7 @@ String authKey = "AUTH_KEY"; // Replace with your App Auth Key
 <hr/>
 
 
-## Contributors :clap:
-Thanks to the following people who have contributed to this project:
-[👨‍💻 @adityagokula2210](https://github.com/adityagokula2210)
-[👨‍💻 @rohit-cometchat](https://github.com/rohit-cometchat)
-
-<hr/>
-
 ## Contact :mailbox:
 Contact us via real time support present in [CometChat Dashboard.](https://app.cometchat.io/)
 <hr/>
 
-## License
-
-This project uses the following license: [License.md](LICENSE).
