@@ -3,11 +3,12 @@
   <groupId>com.cometchat</groupId>
   <artifactId>chat-sdk-android</artifactId>
   <versioning>
-    <latest>4.1.1</latest>
-    <release>4.1.1</release>
+    <latest>4.1.2</latest>
+    <release>4.1.2</release>
     <versions>
       <version>4.1.1</version>
+      <version>4.1.2</version>
     </versions>
-    <lastUpdated>20250707124803</lastUpdated>
+    <lastUpdated>20250708103600</lastUpdated>
   </versioning>
 </metadata>
