@@ -1,0 +1,148 @@
+name: Internal Release (dev-v5)
+
+# Runs when a PR is merged into dev-v5:
+#   1) unit tests   2) Cloudsmith internal release (call-team, Hritika's key)
+#   3) GitHub release on this (cometchat-team) repo, tagged on dev-v5.
+# Version is auto-generated per build: <base from build.gradle>-<epoch_seconds>.
+#
+# v5-automation-tests is a sandbox base branch for testing this workflow itself
+# (same pattern as uikit's v6-automation-tests): branch it off dev-v5, open a PR
+# into it, merge — the full flow runs against it without touching dev-v5.
+on:
+  pull_request:
+    branches:
+      - dev-v5
+      - v5-automation-tests
+    types:
+      - closed
+
+# The built-in GITHUB_TOKEN needs contents:write to create the GitHub Release —
+# declared here so it works regardless of the repo's default workflow permissions.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Only on actual merges, not closed-without-merge PRs
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout the base branch (the merge result, not the PR head).
+      #    base.ref = dev-v5 normally, v5-automation-tests when sandbox-testing. ──
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+
+      # ── JDK (AGP 7.4.2 / Gradle 7.5.1 → JDK 11) ──
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      # ── Cache ──
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # ══════════════════════════════════════════════════════════════
+      # 1) Unit tests — the gate. Nothing below runs if these fail.
+      # ══════════════════════════════════════════════════════════════
+      - name: Run unit tests
+        run: ./gradlew :chat-sdk-android:testDebugUnitTest --stacktrace
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-unit-test-reports
+          path: |
+            chat-sdk-android/build/reports/tests/
+            chat-sdk-android/build/test-results/
+          retention-days: 14
+
+      # ══════════════════════════════════════════════════════════════
+      # 2) Cloudsmith internal release (cometchat/call-team)
+      # ══════════════════════════════════════════════════════════════
+
+      # ── (a) Cloudsmith credentials — Hritika's key for internal releases ──
+      - name: Create local.properties
+        run: |
+          echo "cloudsmith.username=token" >> local.properties
+          echo "cloudsmith.apikey=${{ secrets.CLOUDSMITH_API_KEY_HRITIKA }}" >> local.properties
+          echo "sdk.dir=$ANDROID_HOME" >> local.properties
+
+      # ── Versions:
+      #    VERSION      = <base>-<epoch>  → Cloudsmith call-team (unique per build)
+      #    BASE_VERSION = <base>          → GitHub release tag (clean v5.x.x, no epoch) ──
+      - name: Generate snapshot version
+        id: version
+        run: |
+          BASE_VERSION=$(grep 'def libraryVersion' chat-sdk-android/build.gradle | head -1 | sed "s/.*?: *'\(.*\)'.*/\1/")
+          if [ -z "$BASE_VERSION" ]; then
+            echo "ERROR: could not read libraryVersion from chat-sdk-android/build.gradle"
+            exit 1
+          fi
+          VERSION="${BASE_VERSION}-$(date +%s)"
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "BASE_VERSION=$BASE_VERSION" >> $GITHUB_OUTPUT
+          echo "Cloudsmith version: $VERSION"
+          echo "GitHub tag: v$BASE_VERSION"
+
+      # ── (b) Build the distributable (minified) AAR ──
+      - name: Build AAR
+        run: ./gradlew :chat-sdk-android:assembleDistributable --stacktrace
+        env:
+          LIBRARY_VERSION: ${{ steps.version.outputs.VERSION }}
+
+      - name: Upload AAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-sdk-android-v${{ steps.version.outputs.VERSION }}
+          path: |
+            chat-sdk-android/build/outputs/aar/*.aar
+            proguard_mapping.txt
+          retention-days: 30
+
+      # ── (c)+(d) Publish the AAR to Cloudsmith repo cometchat/call-team ──
+      - name: Publish AAR to Cloudsmith (call-team)
+        run: ./gradlew :chat-sdk-android:publishMavenPublicationToCloudsmithRepository --stacktrace
+        env:
+          LIBRARY_VERSION: ${{ steps.version.outputs.VERSION }}
+          CLOUDSMITH_REPO: cometchat/call-team
+
+      # ══════════════════════════════════════════════════════════════
+      # 3) GitHub release on this repo (cometchat-team/chat-sdk-android)
+      #    Tag = v<base> (clean, NO epoch), target dev-v5, notes = PR description.
+      #    Repeated dev-v5 merges of the same base update the same v<base> release.
+      # ══════════════════════════════════════════════════════════════
+      - name: Extract release notes from PR description
+        id: notes
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "BODY<<$EOF" >> $GITHUB_OUTPUT
+          echo "$PR_BODY" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.BASE_VERSION }}
+          name: v${{ steps.version.outputs.BASE_VERSION }}
+          body: ${{ steps.notes.outputs.BODY }}
+          target_commitish: ${{ github.event.pull_request.base.ref }}
+          draft: false
+          prerelease: ${{ github.event.pull_request.base.ref == 'v5-automation-tests' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

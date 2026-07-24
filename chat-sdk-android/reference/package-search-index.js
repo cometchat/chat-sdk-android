@@ -1,0 +1,1 @@
+packageSearchIndex = [{"l":"All Packages","u":"allpackages-index.html"},{"l":"com.cometchat.chat.core"},{"l":"com.cometchat.chat.exceptions"},{"l":"com.cometchat.chat.helpers"},{"l":"com.cometchat.chat.models"}];updateSearchResults();

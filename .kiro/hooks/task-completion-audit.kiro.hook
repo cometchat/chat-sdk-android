@@ -1,0 +1,13 @@
+{
+  "name": "Task Completion Audit",
+  "version": "1.0.0",
+  "description": "After writing code files, checks that Linear status was updated and work was recorded",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": ["write"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A file was just written. Check if you are currently in the Code Generation phase of AI-DLC (check aidlc-docs/aidlc-state.md or current conversation context).\n\nIf you ARE in Code Generation and just completed work for a Linear sub-issue/task:\n\n1. CHECK: Did you update the Linear sub-issue status to 'In Progress' BEFORE starting this task? If not, update it NOW.\n2. CHECK: After completing all files for this task/unit, did you add a comment on the Linear sub-issue summarizing what was implemented and which files were changed? If not, do it NOW.\n3. CHECK: Are your commits referencing the Linear issue ID in the message format 'feat(LIN-XXX): description'? If not, note this for the next commit.\n4. CHECK: Did you record the work in aidlc-docs/audit.md? If not, append an entry NOW.\n\nIf you are NOT in Code Generation (e.g., writing aidlc-docs, config files, or non-task files), do nothing.\n\nDo NOT skip these checks. The work recording rule is a HARD requirement — every piece of work must be recorded on both GitHub and Linear."
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "Workflow Reset Detection",
+  "version": "1.0.0",
+  "description": "Detects new feature or bugfix start and prompts to reset AI-DLC state",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Check if the user's message indicates starting NEW work (new feature, new bugfix, new task, fresh start). Look for phrases like 'new feature', 'start feature', 'new bugfix', 'fix bug', 'start working on', 'let's build', 'new task', 'clean slate', 'start fresh', or a new Linear issue ID different from what's in aidlc-docs/aidlc-state.md.\n\nIf new work is detected AND aidlc-docs/ exists with previous state:\n1. Inform the user that previous AI-DLC state exists\n2. Ask if they want to reset (delete aidlc-docs/) before starting\n3. If confirmed, delete the aidlc-docs/ directory\n4. Proceed with the AI-DLC workflow from Workspace Detection\n\nIf the message is about continuing existing work, or no aidlc-docs/ exists, do nothing."
+  }
+}

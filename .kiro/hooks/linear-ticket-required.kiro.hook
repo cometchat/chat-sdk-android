@@ -1,0 +1,12 @@
+{
+  "name": "Linear Ticket Required",
+  "version": "1.0.0",
+  "description": "Ensures no development work starts without a Linear ticket reference",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Check if the user's message indicates they want to START development work (new feature, bug fix, implementation, coding task). Look for phrases like 'build', 'implement', 'fix', 'develop', 'create feature', 'work on', 'start task', 'Using AI-DLC'.\n\nIf development work is being requested, check:\n1. Does the message contain a Linear issue ID (pattern like XXX-123)?\n2. Is there already a Linear ticket context established earlier in this conversation?\n3. Does aidlc-docs/aidlc-state.md reference a Linear ticket for current work?\n\nIf NO Linear ticket is found and development work is requested:\n- Ask: 'What is the Linear ticket for this work? I need a Linear issue ID before we can start. For features, provide the feature issue ID. For bugs, provide the bug ticket ID.'\n- Do NOT proceed with any AI-DLC workflow stages until a ticket is provided.\n\nIf a Linear ticket IS found, or the message is not about starting development work (e.g., questions, reviews, updates), do nothing."
+  }
+}

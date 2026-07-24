@@ -1,0 +1,355 @@
+name: Public Release (master-v5)
+
+# Runs when a PR is merged into master-v5 (GA / public release):
+#   1) dependencies-android: branch release-v5-<version> off dev-v5, bump version, merge
+#      into dev-v5 then master-v5, clean + publish
+#   2) mirror the private repo into the public repo (cometchat/chat-sdk-android @ v5)
+#   3) Cloudsmith production release (cometchat/cometchat)
+#   4) GitHub release on the public repo, tagged on v5
+#
+# All credentials in this flow are Ashfaq's (the dev-v5 flow uses Hritika's key).
+# The version is read verbatim from chat-sdk-android/build.gradle — bump it in the PR.
+#
+# STAGING: merging a PR into v5-ga-tests (an unprotected sandbox branch) runs this
+# same workflow against safe targets — version suffixed '-staging.<epoch>',
+# Cloudsmith → call-team, public repo → ashfaqcometchat/card-renderer (branch
+# chat-sdk-citest). The deps flow runs against the REAL dependencies-android: it
+# branches release-v5-<version> off dev-v5, bumps, PUSHES that branch, and publishes to
+# call-team — but does NOT merge into dev-v5/master-v5 (those branches are left
+# untouched). Any base branch other than master-v5 is treated as staging.
+on:
+  pull_request:
+    branches:
+      - master-v5
+      - v5-ga-tests
+    types:
+      - closed
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    env:
+      IS_STAGING: ${{ github.event.pull_request.base.ref != 'master-v5' }}
+
+    steps:
+      # ── Checkout the base branch (the merge result) ──
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+
+      # ── JDK (AGP 7.4.2 / Gradle 7.5.1 → JDK 11) ──
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '11'
+
+      # ── Cache ──
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # ── Version comes from build.gradle, verbatim (must be bumped in the PR).
+      #    Staging runs get '-staging.<epoch>' appended: unique per run, and can
+      #    never collide with a real GA version. ──
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(grep 'def libraryVersion' chat-sdk-android/build.gradle | head -1 | sed "s/.*?: *'\(.*\)'.*/\1/")
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: could not read libraryVersion from chat-sdk-android/build.gradle"
+            exit 1
+          fi
+          if [ "$IS_STAGING" = "true" ]; then
+            VERSION="${VERSION}-staging.$(date +%s)"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      # ── Pick live vs staging targets ──
+      - name: Set release targets
+        id: targets
+        run: |
+          if [ "$IS_STAGING" = "true" ]; then
+            echo "DEPS_REPO=ashfaqcometchat/card-renderer" >> $GITHUB_OUTPUT
+            echo "PUBLIC_REPO=ashfaqcometchat/card-renderer" >> $GITHUB_OUTPUT
+            echo "PUBLIC_BRANCH=chat-sdk-citest" >> $GITHUB_OUTPUT
+            echo "CLOUDSMITH_PROD_REPO=cometchat/call-team" >> $GITHUB_OUTPUT
+            echo "STAGING run: deps GPG-signing test on ashfaqcometchat/card-renderer (branch+signed commit+merge dev-v5→master-v5+tag; deps AAR publish skipped), Cloudsmith = call-team, public repo = card-renderer (chat-sdk-citest)"
+          else
+            echo "DEPS_REPO=cometchat-team/dependencies-android" >> $GITHUB_OUTPUT
+            echo "PUBLIC_REPO=cometchat/chat-sdk-android" >> $GITHUB_OUTPUT
+            echo "PUBLIC_BRANCH=v5" >> $GITHUB_OUTPUT
+            echo "CLOUDSMITH_PROD_REPO=cometchat/cometchat" >> $GITHUB_OUTPUT
+            echo "LIVE run: deps = dependencies-android (push + merge dev-v5→master-v5 + publish), public repo = cometchat/chat-sdk-android (v5), Cloudsmith = cometchat/cometchat"
+          fi
+
+      # ── Release notes from the PR description ──
+      - name: Extract release notes from PR description
+        id: notes
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          echo "BODY<<$EOF" >> $GITHUB_OUTPUT
+          echo "$PR_BODY" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+
+      # ── Cloudsmith credentials — Ashfaq's key for public releases ──
+      - name: Create local.properties
+        run: |
+          echo "cloudsmith.username=token" >> local.properties
+          echo "cloudsmith.apikey=${{ secrets.CLOUDSMITH_API_KEY_ASHFAQ }}" >> local.properties
+          echo "sdk.dir=$ANDROID_HOME" >> local.properties
+
+      # ── Import GPG key + configure git to sign ALL commits/merges globally.
+      #    dependencies-android's dev-v5/master-v5 (and the public repo) require
+      #    verified signatures — unsigned commits are rejected by branch protection. ──
+      - name: Set up GPG signing
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          if [ -z "$GPG_PRIVATE_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
+            echo "ERROR: GPG_PRIVATE_KEY / GPG_PASSPHRASE not configured — signed commits are mandatory"
+            exit 1
+          fi
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --passphrase "$GPG_PASSPHRASE" --import
+          mkdir -p ~/.gnupg
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent || true
+          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format long 2>/dev/null | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
+          echo "Using GPG key: $GPG_KEY_ID"
+          git config --global user.name "ashfaqcometchat"
+          git config --global user.email "mohd.ashfaq@cometchat.com"
+          git config --global user.signingkey "$GPG_KEY_ID"
+          git config --global commit.gpgsign true
+          # Pre-cache the passphrase so signing is non-interactive
+          echo "test" | gpg --batch --yes --passphrase "$GPG_PASSPHRASE" --pinentry-mode loopback -s -u "$GPG_KEY_ID" > /dev/null 2>&1
+
+      # ══════════════════════════════════════════════════════════════
+      # 1) Dependencies flow.
+      #    LIVE: cometchat-team/dependencies-android — branch release-v5-<version>
+      #      off dev-v5, bump versionName, signed commit, push, signed-merge into
+      #      dev-v5 then master-v5, publish deps AAR to production.
+      #    STAGING: ashfaqcometchat/card-renderer — a GPG-signing smoke test that
+      #      exercises the SAME signed commit + merge dev-v5→master-v5 + tag flow
+      #      (using a RELEASE_VERSION.txt marker instead of the deps build.gradle),
+      #      so the signing path that broke in production is validated safely.
+      #      The deps AAR gradle publish is SKIPPED in staging.
+      # ══════════════════════════════════════════════════════════════
+
+      # ── (a) Clone the dependencies repo (real deps live / card-renderer staging) ──
+      - name: Clone dependencies repo
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN_ASHFAQ }}
+          DEPS_REPO: ${{ steps.targets.outputs.DEPS_REPO }}
+        run: |
+          git clone "https://x-access-token:$GH_TOKEN@github.com/$DEPS_REPO.git" /tmp/dependencies-android
+
+      # ── (staging) card-renderer has no dev-v5/master-v5 — create them off its
+      #    default branch so the merge flow below mirrors live 1:1. ──
+      - name: (staging) Ensure dev-v5 and master-v5 exist in card-renderer
+        if: env.IS_STAGING == 'true'
+        run: |
+          cd /tmp/dependencies-android
+          DEFAULT=$(git remote show origin | sed -n 's/.*HEAD branch: //p')
+          echo "Default branch: $DEFAULT"
+          for BR in dev-v5 master-v5; do
+            if git ls-remote --exit-code --heads origin "$BR" >/dev/null 2>&1; then
+              echo "$BR already exists"
+            else
+              git checkout -B "$BR" "origin/$DEFAULT"
+              git push -u origin "$BR"
+              echo "Created $BR off $DEFAULT"
+            fi
+          done
+
+      # ── (b) Branch release-v5-<version> off dev-v5 + make a signed commit ──
+      - name: Create version branch and update dependencies version
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          cd /tmp/dependencies-android
+
+          BRANCH="release-v5-$VERSION"
+          git fetch origin
+          git checkout dev-v5
+          git checkout -b "$BRANCH"
+
+          if [ "$IS_STAGING" = "true" ]; then
+            # card-renderer isn't the deps project — write a marker so there is a
+            # real (signed) commit to merge and tag.
+            echo "$VERSION" > RELEASE_VERSION.txt
+          else
+            BG="cometchat-pro-android-dependencies/build.gradle"
+            sed -i "s/versionName \".*\"/versionName \"$VERSION\"/" "$BG"
+            grep -n "versionName" "$BG"
+          fi
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -S -m "v$VERSION"
+          fi
+
+          # Fresh branch name every run (version is unique), so a plain push;
+          # dev-v5/master-v5 are only updated by the signed merges below.
+          git push -u origin "$BRANCH"
+
+      # ── (c) Signed merge of the version branch into dev-v5 ──
+      - name: Merge version branch into dev-v5
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          cd /tmp/dependencies-android
+          BRANCH="release-v5-$VERSION"
+          git checkout dev-v5
+          git merge --no-ff -S -m "Merge $BRANCH into dev-v5" "$BRANCH"
+          git push origin dev-v5
+
+      # ── (d) Signed merge of dev-v5 into master-v5 ──
+      - name: Merge dev-v5 into master-v5
+        run: |
+          cd /tmp/dependencies-android
+          git checkout master-v5
+          git merge --no-ff -S -m "Merge dev-v5 into master-v5" dev-v5
+          git push origin master-v5
+
+      # ── (staging) Signed tag on card-renderer, to exercise tag signing too ──
+      - name: (staging) Create signed tag in card-renderer
+        if: env.IS_STAGING == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          cd /tmp/dependencies-android
+          git tag -s "v$VERSION" -m "v$VERSION"
+          git push origin "v$VERSION"
+
+      # ── Publish the deps AAR to production (LIVE only — card-renderer isn't the
+      #    deps gradle project, so staging has nothing to publish here). ──
+      - name: Publish dependencies AAR
+        if: env.IS_STAGING != 'true'
+        run: |
+          cd /tmp/dependencies-android
+          echo "cloudsmith.username=token" >> local.properties
+          echo "cloudsmith.apikey=${{ secrets.CLOUDSMITH_API_KEY_ASHFAQ }}" >> local.properties
+          echo "sdk.dir=$ANDROID_HOME" >> local.properties
+          ./gradlew clean
+          ./gradlew publish --stacktrace
+
+      # ══════════════════════════════════════════════════════════════
+      # 2) Mirror the private repo into the public repo
+      #    ⚠️  This copies EVERY tracked file except README.md — including
+      #        chat-sdk-android/src (179 Java files). The public repo has never
+      #        contained source; it hosts Maven artifacts only. See WORKFLOW-GUIDE.md.
+      #        Non-blocking (continue-on-error) per spec.
+      # ══════════════════════════════════════════════════════════════
+      - name: Mirror private repo to public repo
+        id: mirror
+        continue-on-error: true
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN_ASHFAQ }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          PUBLIC_REPO: ${{ steps.targets.outputs.PUBLIC_REPO }}
+          PUBLIC_BRANCH: ${{ steps.targets.outputs.PUBLIC_BRANCH }}
+        run: |
+          git clone "https://x-access-token:$GH_TOKEN@github.com/$PUBLIC_REPO.git" /tmp/public-repo
+          cd /tmp/public-repo
+          git checkout "$PUBLIC_BRANCH"
+
+          # (a)+(b) Copy everything from the private repo, including the distribution
+          # folder; keep only the public README.md. Existing files are overwritten;
+          # files unique to the public repo (past <version>/ artifact folders,
+          # maven-metadata.xml, SECURITY.md) are left in place.
+          rsync -a \
+            --exclude '.git/' \
+            --exclude 'README.md' \
+            "$GITHUB_WORKSPACE"/ /tmp/public-repo/
+
+          git config user.name "ashfaqcometchat"
+          git config user.email "mohd.ashfaq@cometchat.com"
+
+          # Signed commits are REQUIRED — the public repo does not accept unsigned
+          # commits. Fail fast (before touching anything) if the GPG secrets are absent.
+          if [ -z "$GPG_PRIVATE_KEY" ] || [ -z "$GPG_PASSPHRASE" ]; then
+            echo "ERROR: GPG_PRIVATE_KEY / GPG_PASSPHRASE secrets are not configured."
+            echo "Signed commits are mandatory for the public repo — aborting mirror."
+            exit 1
+          fi
+
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --passphrase "$GPG_PASSPHRASE" --import
+          mkdir -p ~/.gnupg
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent || true
+          GPG_KEY_ID=$(gpg --list-secret-keys --keyid-format long 2>/dev/null | grep sec | head -1 | awk '{print $2}' | cut -d'/' -f2)
+          echo "Using GPG key: $GPG_KEY_ID"
+          git config user.signingkey "$GPG_KEY_ID"
+          git config commit.gpgsign true
+          echo "test" | gpg --batch --yes --passphrase "$GPG_PASSPHRASE" --pinentry-mode loopback -s -u "$GPG_KEY_ID" > /dev/null 2>&1
+
+          git add -A
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -S -m "v$VERSION"
+          git push origin "$PUBLIC_BRANCH"
+
+      - name: Report mirror result
+        run: |
+          if [ "${{ steps.mirror.outcome }}" = "success" ]; then
+            echo "### ✅ Public repo mirror: SUCCESS" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ⚠️ Public repo mirror: FAILED (release continues)" >> "$GITHUB_STEP_SUMMARY"
+            echo "Inspect the \"Mirror private repo to public repo\" step log." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # ══════════════════════════════════════════════════════════════
+      # 3) Cloudsmith production release (cometchat/cometchat)
+      # ══════════════════════════════════════════════════════════════
+      - name: Clean, assemble and publish AAR to Cloudsmith (production)
+        run: |
+          ./gradlew clean
+          ./gradlew :chat-sdk-android:assembleDistributable --stacktrace
+          ./gradlew :chat-sdk-android:publishMavenPublicationToCloudsmithRepository --stacktrace
+        env:
+          CLOUDSMITH_REPO: ${{ steps.targets.outputs.CLOUDSMITH_PROD_REPO }}
+          LIBRARY_VERSION: ${{ steps.version.outputs.VERSION }}
+
+      - name: Upload AAR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-sdk-android-v${{ steps.version.outputs.VERSION }}
+          path: |
+            chat-sdk-android/build/outputs/aar/*.aar
+            proguard_mapping.txt
+          retention-days: 30
+
+      # ══════════════════════════════════════════════════════════════
+      # 4) GitHub release on the public repo — tag v<version>, notes from
+      #    the PR description. Staging: card-renderer, marked pre-release.
+      # ══════════════════════════════════════════════════════════════
+      - name: Create GitHub Release (public repo)
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ steps.targets.outputs.PUBLIC_REPO }}
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: v${{ steps.version.outputs.VERSION }}
+          body: ${{ steps.notes.outputs.BODY }}
+          target_commitish: ${{ steps.targets.outputs.PUBLIC_BRANCH }}
+          draft: false
+          prerelease: ${{ env.IS_STAGING == 'true' }}
+          token: ${{ secrets.PUBLIC_REPO_TOKEN_ASHFAQ }}

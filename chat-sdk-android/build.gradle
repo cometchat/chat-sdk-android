@@ -1,0 +1,214 @@
+apply plugin: 'com.android.library'
+apply plugin: 'maven-publish'
+
+// Single source of truth for the SDK base version. Internal (dev-v5) builds
+// override via LIBRARY_VERSION with '<base>-<epoch>' (unique per build); the GA
+// (master-v5) release publishes this value verbatim. CLOUDSMITH_REPO switches
+// between the internal (call-team) and production (cometchat/cometchat) repos.
+def libraryVersion = System.getenv("LIBRARY_VERSION") ?: '5.0.5'
+def cloudsmithRepo = System.getenv("CLOUDSMITH_REPO") ?: 'cometchat/call-team'
+
+android {
+    configurations {
+        all*.exclude group: 'xpp3', module: 'xpp3'
+    }
+
+    compileSdk 30
+    namespace 'com.cometchat.chat'
+
+    testOptions {
+        unitTests.all {
+            useJUnitPlatform()
+        }
+    }
+
+    defaultConfig {
+        minSdk 21
+        targetSdk 30
+        versionCode 1
+        versionName libraryVersion
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
+    }
+
+    lint {
+        abortOnError false
+    }
+
+    android.libraryVariants.all { variant ->
+        if (variant.buildType.name == 'distributable') {
+            if (variant.mappingFile != null) {
+                tasks.create(name: "copyDistributableAarProguardMapping", type: Copy) {
+                    group "distribution"
+                    String today = new Date().format('yyyyMMdd_HHmmss')
+                    from variant.mappingFile.path
+                    rename '.*', "proguard_mapping.txt"
+                    into rootDir
+                }
+                bundleDistributableAar.finalizedBy copyDistributableAarProguardMapping
+            }
+        }
+        variant.outputs.all {
+            outputFileName = "chat-sdk-android.aar"
+        }
+    }
+
+    buildTypes {
+        debug{
+            buildConfigField "String", "VERSION_NAME", "\"${project.android.defaultConfig.versionName}\""
+        }
+        release {
+            buildConfigField "String", "VERSION_NAME", "\"${project.android.defaultConfig.versionName}\""
+            minifyEnabled false
+            consumerProguardFiles 'proguard-rules.pro'
+        }
+        distributable.initWith(buildTypes.release)
+        distributable {
+            minifyEnabled true
+            proguardFiles 'proguard-rules.pro' // if you want to use a specific proguard configuration for the AAR artifact
+        }
+    }
+
+    task makeJarRelease(type: Copy) {
+        from("build/intermediates/bundles/release/")
+        into("some_directory/")
+        include("classes.jar")
+        rename("classes.jar", "yourlibname.jar")
+    }
+
+    task executeTests(type: Exec, dependsOn: 'installDebugAndroidTest') {
+        commandLine 'sh', '../scripts/instrumentation.sh'
+    }
+
+    task runCometChatTests(type: Exec, dependsOn: 'executeTests') {
+        println('exec block started')
+        def home = System.properties['user.home']
+        def path = home + "/results.txt"
+        print('path: '+path)
+        commandLine 'rm', path
+        println('exec block completed')
+        doFirst {
+            println('doFirst block started')
+            def resultsFile = new File(path)
+            if (resultsFile.exists()) {
+                println('File Found')
+                int contents = Integer.parseInt(resultsFile.text.trim())
+                println(contents)
+                if(contents == -1){
+                    println("Test Cases Failed")
+                    throw new RuntimeException("Exiting Due To Test Cases Failure")
+                }else if(contents == 0){
+                    println("Test Cases Passed")
+                }else{
+                    println("Invalid Output")
+                }
+            } else {
+                println('File Not Found')
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    api "android.arch.lifecycle:extensions:1.1.1"
+    annotationProcessor "android.arch.lifecycle:compiler:1.1.1"
+    api 'com.squareup.okhttp3:okhttp:3.12.+'
+    api "android.arch.lifecycle:common-java8:1.1.1"
+    compileOnly 'com.cometchat:calls-sdk-android:4.0.0'
+
+    // Unit testing dependencies
+    testImplementation 'junit:junit:4.13'
+
+    // Testing dependencies
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    // Required so JUnit 4 tests (org.junit.Test) run under useJUnitPlatform();
+    // without it they are silently skipped.
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.10.2'
+    testImplementation 'net.jqwik:jqwik:1.9.1'
+    // android.jar ships org.json as stubs that throw at runtime; a real
+    // implementation on the unit test classpath is needed to exercise fromJson().
+    testImplementation 'org.json:json:20231013'
+
+    androidTestImplementation ('junit:junit:4.13'){
+        exclude group: 'xpp3', module: 'xpp3'
+    }
+    androidTestImplementation ('org.robolectric:annotations:4.3.1'){
+        exclude group: 'xpp3', module: 'xpp3'
+    }
+    androidTestImplementation ("androidx.test.espresso:espresso-core:3.2.0"){
+        exclude group: 'xpp3', module: 'xpp3'
+    }
+    androidTestImplementation group: 'org.skyscreamer', name: 'jsonassert', version: '1.5.0'
+}
+
+// ./gradlew publish
+
+publishing {
+    repositories {
+        maven {
+            url = "$projectDir/distribution"
+        }
+        maven {
+            name = "cloudsmith"
+            url = "https://api-g.cloudsmith.io/maven/$cloudsmithRepo"
+            credentials {
+                Properties properties = new Properties()
+                def localProperties = project.rootProject.file('local.properties')
+                if (localProperties.exists()) {
+                    properties.load(localProperties.newDataInputStream())
+                }
+                username = properties.getProperty("cloudsmith.username")
+                password = properties.getProperty("cloudsmith.apikey")
+            }
+        }
+    }
+    publications {
+        maven(MavenPublication) {
+            groupId 'com.cometchat'
+            artifactId 'chat-sdk-android'
+            version "${project.android.defaultConfig.versionName}"
+            afterEvaluate {
+                artifact bundleDistributableAar
+            }
+
+            pom.withXml {
+                def node = asNode()
+
+                // ugly hack to set the packaging property in the POM as 'aar'
+                ((NodeList) node.get('packaging')).get(0).value = 'aar'
+
+                def dependenciesNode = node.appendNode('dependencies')
+
+                def cl = { Dependency dep ->
+                    if (dep.group == null || dep.version == null || dep.name == null || dep.name == "unspecified")
+                        return // ignore invalid dependencies
+
+                    def dependencyNode = dependenciesNode.appendNode('dependency')
+                    dependencyNode.appendNode('groupId', dep.group)
+                    dependencyNode.appendNode('artifactId', dep.name)
+                    dependencyNode.appendNode('version', dep.version)
+
+                    if (!dep.transitive) {
+                        def exclusionNode = dependencyNode.appendNode('exclusions').appendNode('exclusion')
+                        exclusionNode.appendNode('groupId', '*')
+                        exclusionNode.appendNode('artifactId', '*')
+                    } else if (!dep.properties.excludeRules.empty) {
+                        def exclusionNode = dependencyNode.appendNode('exclusions').appendNode('exclusion')
+                        dep.properties.excludeRules.each { ExcludeRule rule ->
+                            exclusionNode.appendNode('groupId', rule.group ?: '*')
+                            exclusionNode.appendNode('artifactId', rule.module ?: '*')
+                        }
+                    }
+                }
+
+                // List all dependencies and write to POM
+                configurations.api.getAllDependencies().each cl
+                configurations.implementation.getAllDependencies().each cl
+            }
+        }
+    }
+}

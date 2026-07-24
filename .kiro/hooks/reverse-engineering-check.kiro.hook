@@ -1,0 +1,12 @@
+{
+  "name": "Reverse Engineering Validation",
+  "version": "1.0.0",
+  "description": "Checks if reverse engineering artifacts exist and are up to date when a development session starts",
+  "when": {
+    "type": "promptSubmit"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Check if this is a brownfield project (has existing source code beyond just config files). If it is, check if aidlc-docs/inception/reverse-engineering/ exists with artifacts like architecture.md, code-structure.md, api-documentation.md, or component-inventory.md.\n\nIf the project has source code but NO reverse engineering artifacts:\n- Inform the user: 'This project has no AI-DLC reverse engineering artifacts. For the best workflow experience, consider running: Using AI-DLC, reverse engineer this codebase'\n- Only mention this ONCE per session. If you've already mentioned it in this conversation, do not repeat.\n\nIf reverse engineering artifacts exist but aidlc-state.md shows the reverse engineering was done more than 30 days ago (check timestamps in audit.md), suggest revalidation:\n- 'Reverse engineering artifacts are over 30 days old. Consider revalidating: Using AI-DLC, validate reverse engineering'\n\nIf the project is greenfield (no existing source code) or artifacts are recent, do nothing."
+  }
+}

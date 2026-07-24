@@ -1,0 +1,12 @@
+{
+  "name": "Post-Task Linear Sync",
+  "version": "1.0.0",
+  "description": "After an AI-DLC spec task completes, ensures Linear issue is updated",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "An AI-DLC task just completed. You MUST now do the following before proceeding to the next task:\n\n1. IDENTIFY which Linear sub-issue corresponds to the completed task/unit.\n2. UPDATE the Linear sub-issue status to 'Under Dev Review' (use save_issue with the issue ID).\n3. ADD A COMMENT on the Linear sub-issue with:\n   - Summary of what was implemented\n   - List of files created or modified\n   - Any notable decisions or deviations from the plan\n4. LOG the completion in aidlc-docs/audit.md with timestamp.\n5. VERIFY the parent feature/bug issue comment is updated with progress.\n\nDo NOT proceed to the next task until all 5 steps are done. This is a HARD requirement."
+  }
+}

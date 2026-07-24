@@ -1,0 +1,6 @@
+-d '../../../reference'
+-use
+-splitindex
+-windowtitle 'CometChat Reference'
+-doctitle 'CometChat Reference'
+--ignore-source-errors

@@ -1,0 +1,13 @@
+{
+  "name": "Linear Governance Guard",
+  "version": "1.2.0",
+  "description": "Intercepts prohibited Linear MCP write operations only — issue/comment operations are always permitted and not intercepted",
+  "when": {
+    "type": "preToolUse",
+    "toolTypes": [".*linear_create_issue_label.*", ".*linear_create_attachment.*", ".*linear_save_project.*", ".*linear_save_initiative.*", ".*linear_save_milestone.*", ".*linear_delete.*"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A PROHIBITED Linear operation is about to be called. This operation is BLOCKED under Linear governance rules.\n\nPROHIBITED operations:\n- create_issue_label: creating new labels\n- save_project: creating/modifying projects\n- save_initiative: creating/modifying initiatives\n- save_milestone: creating/modifying milestones\n- delete_*: deleting any Linear entity\n- create_attachment: creating attachments\n\nDENY this operation. Inform the user that this requires human administrator approval. For project operations, direct to the rnd-exec team.\n\nNote: save_issue, save_comment, save_status_update, and all read operations are PERMITTED and do NOT trigger this hook."
+  }
+}
