@@ -33,6 +33,8 @@ public class DispatchController {
     private ConnectionStatusListener connectionStatusListener;
     private TransientMessageReceivedListener transientMessageReceivedListener;
     private ModerationStatusListener moderationStatusListener;
+    private PinSaveActionListener pinSaveActionListener;
+    private ConversationPinActionListener conversationPinActionListener;
 
     private AIAssistantListener aiAssistantListener;
     static DispatchController getInstance() {
@@ -87,6 +89,20 @@ public class DispatchController {
     public void informModerationStatusChangedListener(BaseMessage baseMessage) {
         if (moderationStatusListener != null) {
             moderationStatusListener.onModerationStatusChanged(baseMessage);
+        }
+    }
+
+    /** @param action a normalised {@code CometChatConstants.ActionKeys} pin/save string. */
+    public void informPinSaveActionListener(String action, BaseMessage baseMessage) {
+        if (pinSaveActionListener != null) {
+            pinSaveActionListener.onPinSaveAction(action, baseMessage);
+        }
+    }
+
+    /** @param action ACTION_CONVERSATION_PINNED or ACTION_CONVERSATION_UNPINNED. */
+    public void informConversationPinActionListener(String action, com.cometchat.chat.models.Conversation conversation) {
+        if (conversationPinActionListener != null) {
+            conversationPinActionListener.onConversationPinAction(action, conversation);
         }
     }
 
@@ -159,6 +175,14 @@ public class DispatchController {
         this.moderationStatusListener = moderationStatusListener;
     }
 
+    public void setPinSaveActionListener(PinSaveActionListener pinSaveActionListener) {
+        this.pinSaveActionListener = pinSaveActionListener;
+    }
+
+    public void setConversationPinActionListener(ConversationPinActionListener conversationPinActionListener) {
+        this.conversationPinActionListener = conversationPinActionListener;
+    }
+
     public void setAIAssistantListener(AIAssistantListener aiAssistantListener) {
         this.aiAssistantListener = aiAssistantListener;
     }
@@ -197,6 +221,16 @@ public class DispatchController {
 
     interface ModerationStatusListener {
         void onModerationStatusChanged(BaseMessage baseMessage);
+    }
+
+    interface PinSaveActionListener {
+        /** @param action a normalised {@code CometChatConstants.ActionKeys} pin/save string. */
+        void onPinSaveAction(String action, BaseMessage baseMessage);
+    }
+
+    interface ConversationPinActionListener {
+        /** @param action ACTION_CONVERSATION_PINNED or ACTION_CONVERSATION_UNPINNED. */
+        void onConversationPinAction(String action, com.cometchat.chat.models.Conversation conversation);
     }
 
     interface AIAssistantListener {

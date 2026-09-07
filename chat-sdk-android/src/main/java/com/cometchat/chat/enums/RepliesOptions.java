@@ -6,7 +6,8 @@ package com.cometchat.chat.enums;
 public enum RepliesOptions {
     DONT_SUBSCRIBE(1),
     SUBSCRIBE_TO_ALL(2),
-    SUBSCRIBE_TO_MENTIONS(3);
+    SUBSCRIBE_TO_MENTIONS(3),
+    SUBSCRIBE_TO_SUBSCRIBED_THREADS(4);
 
     private final int value;
 

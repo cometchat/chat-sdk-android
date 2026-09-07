@@ -84,6 +84,14 @@ public abstract class AbstractRTTConnection {
         DispatchController.getInstance().informModerationStatusChangedListener(baseMessage);
     }
 
+    protected void informPinSaveActionListener(String action, BaseMessage baseMessage) {
+        DispatchController.getInstance().informPinSaveActionListener(action, baseMessage);
+    }
+
+    protected void informConversationPinActionListener(String action, com.cometchat.chat.models.Conversation conversation) {
+        DispatchController.getInstance().informConversationPinActionListener(action, conversation);
+    }
+
     protected void informAIAssistantListener(AIAssistantBaseEvent event) {
         DispatchController.getInstance().informAIAssistantListener(event);
     }

@@ -58,7 +58,22 @@ public class Settings {
     private String secureMediaHost;
     private long fileSize = 104857600;
     private int fileCount = 10;
+    // Pin & Save UX feature flags (from the `parameters` block). Default enabled: a backend that
+    // does not serve the flag must not dead-disable the feature (parity with the other SDKs).
+    private boolean pinnedMessagesEnabled = true;
+    private boolean savedMessagesEnabled = true;
+    private boolean conversationPinnedEnabled = true;
+    // Pin & Save limits (from the `parameters` block). LIMIT_UNSPECIFIED when the backend does not
+    // serve the value: the client must not invent a cap — the server enforces and errors anyway.
+    private int pinnedMessagesLimit = LIMIT_UNSPECIFIED;
+    private int pinnedMessagesSystemLimit = LIMIT_UNSPECIFIED;
+    private int savedMessagesLimit = LIMIT_UNSPECIFIED;
+    private int conversationPinnedLimit = LIMIT_UNSPECIFIED;
+    private int conversationPinnedSystemLimit = LIMIT_UNSPECIFIED;
     private List<FlagReason> flagReasons;
+
+    /** Sentinel returned by the Pin &amp; Save limit getters when the backend did not serve the value. */
+    public static final int LIMIT_UNSPECIFIED = -1;
 
     private Settings(){
 
@@ -78,6 +93,126 @@ public class Settings {
 
     public void setEnabledExtensions(List<String> enabledExtensions) {
         this.enabledExtensions = enabledExtensions;
+    }
+
+    /**
+     * Whether the Pin Message feature is enabled for this app
+     * ({@code features.ux.messages.pinned.enabled}). Defaults to {@code true} when the flag is not
+     * served.
+     *
+     * @since <b>v5</b>
+     */
+    public boolean isPinnedMessagesEnabled() {
+        return pinnedMessagesEnabled;
+    }
+
+    public void setPinnedMessagesEnabled(boolean pinnedMessagesEnabled) {
+        this.pinnedMessagesEnabled = pinnedMessagesEnabled;
+    }
+
+    /**
+     * Whether the Save Message feature is enabled for this app
+     * ({@code features.ux.messages.saved.enabled}). Defaults to {@code true} when the flag is not
+     * served.
+     *
+     * @since <b>v5</b>
+     */
+    public boolean isSavedMessagesEnabled() {
+        return savedMessagesEnabled;
+    }
+
+    public void setSavedMessagesEnabled(boolean savedMessagesEnabled) {
+        this.savedMessagesEnabled = savedMessagesEnabled;
+    }
+
+    /**
+     * Whether the Pin Conversation feature is enabled for this app
+     * ({@code features.ux.conversations.pinned.enabled}). Defaults to {@code true} when the flag is
+     * not served.
+     *
+     * @since <b>v5</b>
+     */
+    public boolean isConversationPinnedEnabled() {
+        return conversationPinnedEnabled;
+    }
+
+    public void setConversationPinnedEnabled(boolean conversationPinnedEnabled) {
+        this.conversationPinnedEnabled = conversationPinnedEnabled;
+    }
+
+    /**
+     * Maximum number of messages the current user can pin in a conversation
+     * ({@code features.ux.messages.pinned.limit}). Returns {@link #LIMIT_UNSPECIFIED} when the
+     * backend does not serve the value.
+     *
+     * @since <b>v5</b>
+     */
+    public int getPinnedMessagesLimit() {
+        return pinnedMessagesLimit;
+    }
+
+    public void setPinnedMessagesLimit(int pinnedMessagesLimit) {
+        this.pinnedMessagesLimit = pinnedMessagesLimit;
+    }
+
+    /**
+     * Maximum number of messages an admin / system can pin in a conversation
+     * ({@code features.ux.messages.pinned.system.limit}). Returns {@link #LIMIT_UNSPECIFIED} when
+     * the backend does not serve the value.
+     *
+     * @since <b>v5</b>
+     */
+    public int getPinnedMessagesSystemLimit() {
+        return pinnedMessagesSystemLimit;
+    }
+
+    public void setPinnedMessagesSystemLimit(int pinnedMessagesSystemLimit) {
+        this.pinnedMessagesSystemLimit = pinnedMessagesSystemLimit;
+    }
+
+    /**
+     * Maximum number of messages the current user can save
+     * ({@code features.ux.messages.saved.limit}). Returns {@link #LIMIT_UNSPECIFIED} when the
+     * backend does not serve the value.
+     *
+     * @since <b>v5</b>
+     */
+    public int getSavedMessagesLimit() {
+        return savedMessagesLimit;
+    }
+
+    public void setSavedMessagesLimit(int savedMessagesLimit) {
+        this.savedMessagesLimit = savedMessagesLimit;
+    }
+
+    /**
+     * Maximum number of conversations the current user can pin
+     * ({@code features.ux.conversations.pinned.limit}). Returns {@link #LIMIT_UNSPECIFIED} when the
+     * backend does not serve the value.
+     *
+     * @since <b>v5</b>
+     */
+    public int getConversationPinnedLimit() {
+        return conversationPinnedLimit;
+    }
+
+    public void setConversationPinnedLimit(int conversationPinnedLimit) {
+        this.conversationPinnedLimit = conversationPinnedLimit;
+    }
+
+    /**
+     * Maximum number of conversations an admin / system can pin
+     * ({@code features.ux.conversations.pinned.system.limit}). Returns {@link #LIMIT_UNSPECIFIED}
+     * when the backend does not serve the value.
+     *
+     * @since <b>v5</b>
+     */
+    public int getConversationPinnedSystemLimit() {
+        return conversationPinnedSystemLimit;
+    }
+
+    public void setConversationPinnedSystemLimit(int conversationPinnedSystemLimit) {
+        this.conversationPinnedSystemLimit = conversationPinnedSystemLimit;
     }
 
     public String getContactList() {
@@ -484,6 +619,16 @@ public class Settings {
                 settings.setFileSize(parametersObject.getLong(CometChatConstants.SettingsKeys.FILE_SIZE));
             if (parametersObject.has(CometChatConstants.SettingsKeys.FILE_COUNT))
                 settings.setFileCount(parametersObject.getInt(CometChatConstants.SettingsKeys.FILE_COUNT));
+            // Pin & Save flags — absence ⇒ enabled (see field defaults).
+            settings.setPinnedMessagesEnabled(parametersObject.optBoolean(CometChatConstants.FeatureKeys.FEATURE_PIN_MESSAGE, true));
+            settings.setSavedMessagesEnabled(parametersObject.optBoolean(CometChatConstants.FeatureKeys.FEATURE_SAVE_MESSAGE, true));
+            settings.setConversationPinnedEnabled(parametersObject.optBoolean(CometChatConstants.FeatureKeys.FEATURE_PIN_CONVERSATION, true));
+            // Pin & Save limits — absence ⇒ LIMIT_UNSPECIFIED (optInt also coerces string-typed values).
+            settings.setPinnedMessagesLimit(parametersObject.optInt(CometChatConstants.FeatureKeys.FEATURE_PIN_MESSAGE_LIMIT, LIMIT_UNSPECIFIED));
+            settings.setPinnedMessagesSystemLimit(parametersObject.optInt(CometChatConstants.FeatureKeys.FEATURE_PIN_MESSAGE_SYSTEM_LIMIT, LIMIT_UNSPECIFIED));
+            settings.setSavedMessagesLimit(parametersObject.optInt(CometChatConstants.FeatureKeys.FEATURE_SAVE_MESSAGE_LIMIT, LIMIT_UNSPECIFIED));
+            settings.setConversationPinnedLimit(parametersObject.optInt(CometChatConstants.FeatureKeys.FEATURE_PIN_CONVERSATION_LIMIT, LIMIT_UNSPECIFIED));
+            settings.setConversationPinnedSystemLimit(parametersObject.optInt(CometChatConstants.FeatureKeys.FEATURE_PIN_CONVERSATION_SYSTEM_LIMIT, LIMIT_UNSPECIFIED));
         }
 
         if (mainObject.has(CometChatConstants.SettingsKeys.FLAG_REASONS)) {
@@ -542,6 +687,14 @@ public class Settings {
                 ", webrtcAPISubDomain='" + webrtcAPISubDomain + '\'' +
                 ", fileSize='" + fileSize + '\'' +
                 ", fileCount='" + fileCount + '\'' +
+                ", pinnedMessagesEnabled=" + pinnedMessagesEnabled +
+                ", savedMessagesEnabled=" + savedMessagesEnabled +
+                ", conversationPinnedEnabled=" + conversationPinnedEnabled +
+                ", pinnedMessagesLimit=" + pinnedMessagesLimit +
+                ", pinnedMessagesSystemLimit=" + pinnedMessagesSystemLimit +
+                ", savedMessagesLimit=" + savedMessagesLimit +
+                ", conversationPinnedLimit=" + conversationPinnedLimit +
+                ", conversationPinnedSystemLimit=" + conversationPinnedSystemLimit +
                 ", flagReasons='" + flagReasons + '\'' +
                 '}';
     }

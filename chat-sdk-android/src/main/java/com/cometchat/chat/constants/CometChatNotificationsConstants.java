@@ -20,6 +20,7 @@ public class CometChatNotificationsConstants {
     public static final class GroupPreferencesKeys {
         public static final String KEY_GROUP_MESSAGES = "groupMessages";
         public static final String KEY_GROUP_REPLIES = "groupReplies";
+        public static final String KEY_GROUP_QUOTED_REPLIES = "groupQuotedReplies";
         public static final String KEY_GROUP_REACTIONS = "groupReactions";
         public static final String KEY_GROUP_MEMBER_LEFT = "groupMemberLeft";
         public static final String KEY_GROUP_MEMBER_ADDED = "groupMemberAdded";
@@ -33,6 +34,7 @@ public class CometChatNotificationsConstants {
     public static final class OneOnOnePreferencesKeys {
         public static final String ONE_ON_ONE_MESSAGES = "oneOnOneMessages";
         public static final String ONE_ON_ONE_REPLIES = "oneOnOneReplies";
+        public static final String ONE_ON_ONE_QUOTED_REPLIES = "oneOnOneQuotedReplies";
         public static final String ONE_ON_ONE_REACTIONS = "oneOnOneReactions";
     }
 

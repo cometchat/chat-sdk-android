@@ -6,6 +6,7 @@ import android.os.Parcelable;
 import com.cometchat.chat.constants.CometChatNotificationsConstants;
 import com.cometchat.chat.enums.MemberActionsOptions;
 import com.cometchat.chat.enums.MessagesOptions;
+import com.cometchat.chat.enums.QuotedRepliesOptions;
 import com.cometchat.chat.enums.ReactionsOptions;
 import com.cometchat.chat.enums.RepliesOptions;
 import com.cometchat.chat.helpers.Logger;
@@ -24,6 +25,7 @@ import java.util.Objects;
 public class GroupPreferences implements Parcelable, Cloneable {
     private MessagesOptions groupMessages;
     private RepliesOptions groupReplies;
+    private QuotedRepliesOptions groupQuotedReplies;
     private ReactionsOptions groupReactions;
     private MemberActionsOptions groupMemberLeft;
     private MemberActionsOptions groupMemberAdded;
@@ -40,6 +42,8 @@ public class GroupPreferences implements Parcelable, Cloneable {
         groupMessages = msgVal != -1 ? MessagesOptions.get(msgVal) : null;
         int repliesVal = in.readInt();
         groupReplies = repliesVal != -1 ? RepliesOptions.get(repliesVal) : null;
+        int quotedRepliesVal = in.readInt();
+        groupQuotedReplies = quotedRepliesVal != -1 ? QuotedRepliesOptions.get(quotedRepliesVal) : null;
         int reactionsVal = in.readInt();
         groupReactions = reactionsVal != -1 ? ReactionsOptions.get(reactionsVal) : null;
         int leftVal = in.readInt();
@@ -62,6 +66,7 @@ public class GroupPreferences implements Parcelable, Cloneable {
     public void writeToParcel(Parcel dest, int flags) {
         dest.writeInt(groupMessages != null ? groupMessages.getValue() : -1);
         dest.writeInt(groupReplies != null ? groupReplies.getValue() : -1);
+        dest.writeInt(groupQuotedReplies != null ? groupQuotedReplies.getValue() : -1);
         dest.writeInt(groupReactions != null ? groupReactions.getValue() : -1);
         dest.writeInt(groupMemberLeft != null ? groupMemberLeft.getValue() : -1);
         dest.writeInt(groupMemberAdded != null ? groupMemberAdded.getValue() : -1);
@@ -106,6 +111,15 @@ public class GroupPreferences implements Parcelable, Cloneable {
         return groupReplies;
     }
 
+    /**
+     * Returns the quoted-replies notification preference, or {@code null} when it has never been
+     * configured. Unset is distinct from {@link QuotedRepliesOptions#DONT_SUBSCRIBE}: unset means the
+     * server default applies.
+     */
+    public QuotedRepliesOptions getQuotedRepliesPreference() {
+        return groupQuotedReplies;
+    }
+
     public ReactionsOptions getReactionsPreference() {
         return groupReactions;
     }
@@ -144,6 +158,14 @@ public class GroupPreferences implements Parcelable, Cloneable {
 
     public void setRepliesPreference(RepliesOptions groupReplies) {
         this.groupReplies = groupReplies;
+    }
+
+    /**
+     * Sets the quoted-replies notification preference. Passing {@code null} leaves the preference
+     * unset, and an unset preference is omitted from an update request rather than sent as a default.
+     */
+    public void setQuotedRepliesPreference(QuotedRepliesOptions groupQuotedReplies) {
+        this.groupQuotedReplies = groupQuotedReplies;
     }
 
     public void setReactionsPreference(ReactionsOptions groupReactions) {
@@ -187,6 +209,9 @@ public class GroupPreferences implements Parcelable, Cloneable {
             if(groupReplies != null){
                 jsonObject.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REPLIES, groupReplies.getValue());
             }
+            if(groupQuotedReplies != null){
+                jsonObject.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_QUOTED_REPLIES, groupQuotedReplies.getValue());
+            }
             if(groupReactions != null){
                 jsonObject.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REACTIONS, groupReactions.getValue());
             }
@@ -226,6 +251,9 @@ public class GroupPreferences implements Parcelable, Cloneable {
             if (jsonObject.has(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REPLIES)){
                 groupPreferences.setRepliesPreference(RepliesOptions.get(jsonObject.optInt(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REPLIES)));
             }
+            if (jsonObject.has(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_QUOTED_REPLIES)){
+                groupPreferences.setQuotedRepliesPreference(QuotedRepliesOptions.get(jsonObject.optInt(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_QUOTED_REPLIES)));
+            }
             if (jsonObject.has(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REACTIONS)){
                 groupPreferences.setReactionsPreference(ReactionsOptions.get(jsonObject.optInt(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REACTIONS)));
             }
@@ -264,6 +292,9 @@ public class GroupPreferences implements Parcelable, Cloneable {
         if(groupReplies != null){
             map.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REPLIES, groupReplies.getValue());
         }
+        if(groupQuotedReplies != null){
+            map.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_QUOTED_REPLIES, groupQuotedReplies.getValue());
+        }
         if(groupReactions != null){
             map.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REACTIONS, groupReactions.getValue());
         }
@@ -291,37 +322,55 @@ public class GroupPreferences implements Parcelable, Cloneable {
         return map;
     }
 
+    /**
+     * Builds a bucket from a wire map. A key that is absent, or present with a {@code null} value,
+     * leaves that preference unset. A null map yields an all-unset bucket.
+     */
     public static GroupPreferences fromMap(Map<String, Integer> map) {
         GroupPreferences groupPreferences = new GroupPreferences();
-        if (map.containsKey(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MESSAGES)){
-            groupPreferences.setMessagesPreference(MessagesOptions.get(map.get(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MESSAGES)));
+        Integer messages = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MESSAGES);
+        if (messages != null){
+            groupPreferences.setMessagesPreference(MessagesOptions.get(messages));
         }
-        if (map.containsKey(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REPLIES)){
-            groupPreferences.setRepliesPreference(RepliesOptions.get(map.get(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REPLIES)));
+        Integer replies = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REPLIES);
+        if (replies != null){
+            groupPreferences.setRepliesPreference(RepliesOptions.get(replies));
         }
-        if (map.containsKey(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REACTIONS)){
-            groupPreferences.setReactionsPreference(ReactionsOptions.get(map.get(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REACTIONS)));
+        Integer quotedReplies = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_QUOTED_REPLIES);
+        if (quotedReplies != null){
+            groupPreferences.setQuotedRepliesPreference(QuotedRepliesOptions.get(quotedReplies));
         }
-        if(map.containsKey(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_LEFT)){
-            groupPreferences.setMemberLeftPreference(MemberActionsOptions.get(map.get(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_LEFT)));
+        Integer reactions = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REACTIONS);
+        if (reactions != null){
+            groupPreferences.setReactionsPreference(ReactionsOptions.get(reactions));
         }
-        if (map.containsKey(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_ADDED)){
-            groupPreferences.setMemberAddedPreference(MemberActionsOptions.get(map.get(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_ADDED)));
+        Integer memberLeft = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_LEFT);
+        if (memberLeft != null){
+            groupPreferences.setMemberLeftPreference(MemberActionsOptions.get(memberLeft));
         }
-        if (map.containsKey(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_JOINED)){
-            groupPreferences.setMemberJoinedPreference(MemberActionsOptions.get(map.get(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_JOINED)));
+        Integer memberAdded = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_ADDED);
+        if (memberAdded != null){
+            groupPreferences.setMemberAddedPreference(MemberActionsOptions.get(memberAdded));
         }
-        if (map.containsKey(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_KICKED)){
-            groupPreferences.setMemberKickedPreference(MemberActionsOptions.get(map.get(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_KICKED)));
+        Integer memberJoined = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_JOINED);
+        if (memberJoined != null){
+            groupPreferences.setMemberJoinedPreference(MemberActionsOptions.get(memberJoined));
         }
-        if (map.containsKey(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_BANNED)){
-            groupPreferences.setMemberBannedPreference(MemberActionsOptions.get(map.get(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_BANNED)));
+        Integer memberKicked = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_KICKED);
+        if (memberKicked != null){
+            groupPreferences.setMemberKickedPreference(MemberActionsOptions.get(memberKicked));
         }
-        if (map.containsKey(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_UNBANNED)){
-            groupPreferences.setMemberUnbannedPreference(MemberActionsOptions.get(map.get(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_UNBANNED)));
+        Integer memberBanned = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_BANNED);
+        if (memberBanned != null){
+            groupPreferences.setMemberBannedPreference(MemberActionsOptions.get(memberBanned));
         }
-        if (map.containsKey(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_SCOPE_CHANGED)){
-            groupPreferences.setMemberScopeChangedPreference(MemberActionsOptions.get(map.get(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_SCOPE_CHANGED)));
+        Integer memberUnbanned = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_UNBANNED);
+        if (memberUnbanned != null){
+            groupPreferences.setMemberUnbannedPreference(MemberActionsOptions.get(memberUnbanned));
+        }
+        Integer memberScopeChanged = PreferenceMaps.opt(map, CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_SCOPE_CHANGED);
+        if (memberScopeChanged != null){
+            groupPreferences.setMemberScopeChangedPreference(MemberActionsOptions.get(memberScopeChanged));
         }
         return groupPreferences;
     }
@@ -331,6 +380,7 @@ public class GroupPreferences implements Parcelable, Cloneable {
         return "GroupPreferences{" +
                 "groupMessages=" + groupMessages +
                 ", groupReplies=" + groupReplies +
+                ", groupQuotedReplies=" + groupQuotedReplies +
                 ", groupReactions=" + groupReactions +
                 ", groupMemberLeft=" + groupMemberLeft +
                 ", groupMemberAdded=" + groupMemberAdded +
@@ -371,6 +421,7 @@ public class GroupPreferences implements Parcelable, Cloneable {
         // 5. Compare all enum fields (use == for enums, handles null safely)
         return groupMessages == that.groupMessages
                 && groupReplies == that.groupReplies
+                && groupQuotedReplies == that.groupQuotedReplies
                 && groupReactions == that.groupReactions
                 && groupMemberLeft == that.groupMemberLeft
                 && groupMemberAdded == that.groupMemberAdded

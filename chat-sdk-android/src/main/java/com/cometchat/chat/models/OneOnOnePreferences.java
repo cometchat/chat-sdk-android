@@ -5,6 +5,7 @@ import android.os.Parcelable;
 
 import com.cometchat.chat.constants.CometChatNotificationsConstants;
 import com.cometchat.chat.enums.MessagesOptions;
+import com.cometchat.chat.enums.QuotedRepliesOptions;
 import com.cometchat.chat.enums.ReactionsOptions;
 import com.cometchat.chat.enums.RepliesOptions;
 import com.cometchat.chat.helpers.Logger;
@@ -22,6 +23,7 @@ import java.util.Objects;
 public class OneOnOnePreferences implements Parcelable, Cloneable {
     private MessagesOptions oneOnOneMessages;
     private RepliesOptions oneOnOneReplies;
+    private QuotedRepliesOptions oneOnOneQuotedReplies;
     private ReactionsOptions oneOnOneReactions;
 
     public OneOnOnePreferences() {}
@@ -42,6 +44,23 @@ public class OneOnOnePreferences implements Parcelable, Cloneable {
         this.oneOnOneReplies = oneOnOneReplies;
     }
 
+    /**
+     * Returns the quoted-replies notification preference, or {@code null} when it has never been
+     * configured. Unset is distinct from {@link QuotedRepliesOptions#DONT_SUBSCRIBE}: unset means the
+     * server default applies.
+     */
+    public QuotedRepliesOptions getQuotedRepliesPreference() {
+        return oneOnOneQuotedReplies;
+    }
+
+    /**
+     * Sets the quoted-replies notification preference. Passing {@code null} leaves the preference
+     * unset, and an unset preference is omitted from an update request rather than sent as a default.
+     */
+    public void setQuotedRepliesPreference(QuotedRepliesOptions oneOnOneQuotedReplies) {
+        this.oneOnOneQuotedReplies = oneOnOneQuotedReplies;
+    }
+
     public ReactionsOptions getReactionsPreference() {
         return oneOnOneReactions;
     }
@@ -58,6 +77,9 @@ public class OneOnOnePreferences implements Parcelable, Cloneable {
             }
             if (oneOnOneReplies != null) {
                 jsonObject.put(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REPLIES, oneOnOneReplies.getValue());
+            }
+            if (oneOnOneQuotedReplies != null) {
+                jsonObject.put(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_QUOTED_REPLIES, oneOnOneQuotedReplies.getValue());
             }
             if (oneOnOneReactions != null) {
                 jsonObject.put(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REACTIONS, oneOnOneReactions.getValue());
@@ -77,6 +99,9 @@ public class OneOnOnePreferences implements Parcelable, Cloneable {
             if (jsonObject.has(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REPLIES)){
                 oneOnOnePreferences.setRepliesPreference(RepliesOptions.get(jsonObject.optInt(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REPLIES)));
             }
+            if (jsonObject.has(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_QUOTED_REPLIES)){
+                oneOnOnePreferences.setQuotedRepliesPreference(QuotedRepliesOptions.get(jsonObject.optInt(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_QUOTED_REPLIES)));
+            }
             if (jsonObject.has(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REACTIONS)){
                 oneOnOnePreferences.setReactionsPreference(ReactionsOptions.get(jsonObject.optInt(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REACTIONS)));
             }
@@ -94,22 +119,36 @@ public class OneOnOnePreferences implements Parcelable, Cloneable {
         if (oneOnOneReplies != null) {
             map.put(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REPLIES, oneOnOneReplies.getValue());
         }
+        if (oneOnOneQuotedReplies != null) {
+            map.put(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_QUOTED_REPLIES, oneOnOneQuotedReplies.getValue());
+        }
         if (oneOnOneReactions != null) {
             map.put(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REACTIONS, oneOnOneReactions.getValue());
         }
         return map;
     }
 
+    /**
+     * Builds a bucket from a wire map. A key that is absent, or present with a {@code null} value,
+     * leaves that preference unset. A null map yields an all-unset bucket.
+     */
     public static OneOnOnePreferences fromMap(Map<String, Integer> map) {
         OneOnOnePreferences oneOnOnePreferences = new OneOnOnePreferences();
-        if (map.containsKey(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_MESSAGES)) {
-            oneOnOnePreferences.setMessagesPreference(MessagesOptions.get(map.get(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_MESSAGES)));
+        Integer messages = PreferenceMaps.opt(map, CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_MESSAGES);
+        if (messages != null) {
+            oneOnOnePreferences.setMessagesPreference(MessagesOptions.get(messages));
         }
-        if (map.containsKey(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REACTIONS)) {
-            oneOnOnePreferences.setReactionsPreference(ReactionsOptions.get(map.get(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REACTIONS)));
+        Integer reactions = PreferenceMaps.opt(map, CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REACTIONS);
+        if (reactions != null) {
+            oneOnOnePreferences.setReactionsPreference(ReactionsOptions.get(reactions));
         }
-        if (map.containsKey(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REPLIES)) {
-            oneOnOnePreferences.setRepliesPreference(RepliesOptions.get(map.get(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REPLIES)));
+        Integer replies = PreferenceMaps.opt(map, CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REPLIES);
+        if (replies != null) {
+            oneOnOnePreferences.setRepliesPreference(RepliesOptions.get(replies));
+        }
+        Integer quotedReplies = PreferenceMaps.opt(map, CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_QUOTED_REPLIES);
+        if (quotedReplies != null) {
+            oneOnOnePreferences.setQuotedRepliesPreference(QuotedRepliesOptions.get(quotedReplies));
         }
         return oneOnOnePreferences;
     }
@@ -119,6 +158,7 @@ public class OneOnOnePreferences implements Parcelable, Cloneable {
         return "OneOnOnePreferences{" +
                 "oneOnOneMessages=" + oneOnOneMessages +
                 ", oneOnOneReplies=" + oneOnOneReplies +
+                ", oneOnOneQuotedReplies=" + oneOnOneQuotedReplies +
                 ", oneOnOneReactions=" + oneOnOneReactions +
                 '}';
     }
@@ -152,23 +192,47 @@ public class OneOnOnePreferences implements Parcelable, Cloneable {
         // 5. Compare all enum fields (use == for enums, handles null safely)
         return oneOnOneMessages == that.oneOnOneMessages
                 && oneOnOneReplies == that.oneOnOneReplies
+                && oneOnOneQuotedReplies == that.oneOnOneQuotedReplies
                 && oneOnOneReactions == that.oneOnOneReactions;
     }
 
     // Parcelable implementation
     protected OneOnOnePreferences(Parcel in) {
-        String messagesStr = in.readString();
-        oneOnOneMessages = messagesStr != null ? MessagesOptions.valueOf(messagesStr) : null;
-        String repliesStr = in.readString();
-        oneOnOneReplies = repliesStr != null ? RepliesOptions.valueOf(repliesStr) : null;
-        String reactionsStr = in.readString();
-        oneOnOneReactions = reactionsStr != null ? ReactionsOptions.valueOf(reactionsStr) : null;
+        oneOnOneMessages = safeValueOf(MessagesOptions.class, in.readString());
+        oneOnOneReplies = safeValueOf(RepliesOptions.class, in.readString());
+        oneOnOneQuotedReplies = safeValueOf(QuotedRepliesOptions.class, in.readString());
+        oneOnOneReactions = safeValueOf(ReactionsOptions.class, in.readString());
+    }
+
+    /**
+     * Resolves an enum constant by name without throwing.
+     *
+     * <p>The parcel stores each preference as its enum {@link Enum#name()} and restores it here.
+     * A plain {@link Enum#valueOf(Class, String)} throws {@link IllegalArgumentException} when the
+     * stored name is not a member of the enum — which happens the moment the backend introduces a
+     * new preference value (e.g. {@code RepliesOptions.SUBSCRIBE_TO_SUBSCRIBED_THREADS}) that an
+     * older build cannot resolve. An absent/unknown value must resolve to {@code null}
+     * ("not yet configured"), never crash. Kept package-private so it can be unit tested directly.
+     *
+     * @return the matching constant, or {@code null} when {@code name} is null or unrecognized
+     */
+    static <T extends Enum<T>> T safeValueOf(Class<T> type, String name) {
+        if (name == null) {
+            return null;
+        }
+        try {
+            return Enum.valueOf(type, name);
+        } catch (IllegalArgumentException e) {
+            Logger.error(e.toString());
+            return null;
+        }
     }
 
     @Override
     public void writeToParcel(Parcel dest, int flags) {
         dest.writeString(oneOnOneMessages != null ? oneOnOneMessages.name() : null);
         dest.writeString(oneOnOneReplies != null ? oneOnOneReplies.name() : null);
+        dest.writeString(oneOnOneQuotedReplies != null ? oneOnOneQuotedReplies.name() : null);
         dest.writeString(oneOnOneReactions != null ? oneOnOneReactions.name() : null);
     }
 
@@ -197,6 +261,7 @@ public class OneOnOnePreferences implements Parcelable, Cloneable {
             OneOnOnePreferences clone = new OneOnOnePreferences();
             clone.oneOnOneMessages = this.oneOnOneMessages;
             clone.oneOnOneReplies = this.oneOnOneReplies;
+            clone.oneOnOneQuotedReplies = this.oneOnOneQuotedReplies;
             clone.oneOnOneReactions = this.oneOnOneReactions;
             return clone;
         }

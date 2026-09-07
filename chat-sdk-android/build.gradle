@@ -5,7 +5,7 @@ apply plugin: 'maven-publish'
 // override via LIBRARY_VERSION with '<base>-<epoch>' (unique per build); the GA
 // (master-v5) release publishes this value verbatim. CLOUDSMITH_REPO switches
 // between the internal (call-team) and production (cometchat/cometchat) repos.
-def libraryVersion = System.getenv("LIBRARY_VERSION") ?: '5.0.5'
+def libraryVersion = System.getenv("LIBRARY_VERSION") ?: '5.0.6'
 def cloudsmithRepo = System.getenv("CLOUDSMITH_REPO") ?: 'cometchat/call-team'
 
 android {

@@ -167,6 +167,9 @@ public class CardMessage extends BaseMessage {
                 cardMessage.setDeletedAt(jsonObject.getLong(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_AT));
             if (jsonObject.has(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_BY))
                 cardMessage.setDeletedBy(jsonObject.getString(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_BY));
+            // Pin & Save attributes — single parse chokepoint (PIN_SAVE_CONTRACT).
+            BaseMessage.applyPinSaveAttributes(cardMessage, jsonObject);
+            com.cometchat.chat.utils.ThreadParser.applyThreadAttributes(cardMessage, jsonObject);
             if (jsonObject.has(CometChatConstants.ResponseKeys.KEY_DATA)) {
                 JSONObject dataObject = jsonObject.getJSONObject(CometChatConstants.ResponseKeys.KEY_DATA);
                 if (dataObject.has(CometChatConstants.MessageKeys.KEY_AGENTIC_TEXT)) {

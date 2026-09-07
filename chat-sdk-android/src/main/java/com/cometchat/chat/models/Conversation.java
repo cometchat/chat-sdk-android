@@ -31,6 +31,11 @@ public class Conversation implements Parcelable, Cloneable {
     private int unreadMentionsCount = 0;
     private long lastReadMessageId;
     private long latestMessageId;
+    // Pin Conversation. Present-only-when-set (absence ⇒ not pinned, never 0-as-set). pinnedBy is
+    // the pinner uid or "app_system" for an admin/global pin. Populated only via
+    // #applyPinAttributes (single parse site).
+    private long pinnedAt;
+    private String pinnedBy;
 
     private Conversation() {}
 
@@ -53,6 +58,8 @@ public class Conversation implements Parcelable, Cloneable {
         tags = in.createStringArrayList();
         unreadMentionsCount = in.readInt();
         lastReadMessageId = in.readLong();
+        pinnedAt = in.readLong();
+        pinnedBy = in.readString();
     }
 
     @Override
@@ -72,6 +79,8 @@ public class Conversation implements Parcelable, Cloneable {
         dest.writeStringList(tags);
         dest.writeInt(unreadMentionsCount);
         dest.writeLong(lastReadMessageId);
+        dest.writeLong(pinnedAt);
+        dest.writeString(pinnedBy);
     }
 
     @Override
@@ -190,6 +199,80 @@ public class Conversation implements Parcelable, Cloneable {
         this.latestMessageId = latestMessageId;
     }
 
+    /**
+     * Timestamp (epoch seconds) at which this conversation was pinned for the current user, or
+     * {@code 0} when not pinned.
+     *
+     * @return the pinned-at timestamp, or {@code 0}
+     * @since <b>v5</b>
+     */
+    public long getPinnedAt() {
+        return pinnedAt;
+    }
+
+    public void setPinnedAt(long pinnedAt) {
+        this.pinnedAt = pinnedAt;
+    }
+
+    /**
+     * UID of who pinned this conversation, or {@code "app_system"} for an admin / global pin.
+     * {@code null} when not pinned.
+     *
+     * @return the pinner UID, {@code "app_system"}, or {@code null}
+     * @since <b>v5</b>
+     */
+    public String getPinnedBy() {
+        return pinnedBy;
+    }
+
+    public void setPinnedBy(String pinnedBy) {
+        this.pinnedBy = pinnedBy;
+    }
+
+    /**
+     * Whether this conversation is pinned. Presence of {@code pinnedAt} IS the boolean.
+     *
+     * @since <b>v5</b>
+     */
+    public boolean isPinned() {
+        return pinnedAt > 0;
+    }
+
+    /**
+     * Whether this conversation is pinned by the system (admin / global pin) rather than the user.
+     *
+     * @since <b>v5</b>
+     */
+    public boolean isSystemPinned() {
+        return isPinned() && com.cometchat.chat.constants.PinSaveContract.SYSTEM_PINNER_SENTINEL.equals(pinnedBy);
+    }
+
+    /**
+     * Single parse chokepoint for the conversation pin attributes. The ONLY place the
+     * {@code pinnedAt}/{@code pinnedBy} JSON keys are read. Same contract as message pin/save:
+     * absent ⇒ not pinned (never 0-as-set, never a throw); wrong-typed ⇒ treated as missing; the
+     * fields are always assigned so an unpin response (keys omitted) clears any stale value.
+     *
+     * @since <b>v5</b>
+     */
+    public static void applyPinAttributes(Conversation conversation, JSONObject json) {
+        if (conversation == null || json == null) {
+            return;
+        }
+        if (json.has(CometChatConstants.ConversationKeys.KEY_CONVERSATION_PINNED_AT)
+                && !json.isNull(CometChatConstants.ConversationKeys.KEY_CONVERSATION_PINNED_AT)) {
+            conversation.setPinnedAt(json.optLong(CometChatConstants.ConversationKeys.KEY_CONVERSATION_PINNED_AT, 0));
+        } else {
+            conversation.setPinnedAt(0);
+        }
+        if (json.has(CometChatConstants.ConversationKeys.KEY_CONVERSATION_PINNED_BY)
+                && !json.isNull(CometChatConstants.ConversationKeys.KEY_CONVERSATION_PINNED_BY)) {
+            conversation.setPinnedBy(json.optString(CometChatConstants.ConversationKeys.KEY_CONVERSATION_PINNED_BY, null));
+        } else {
+            conversation.setPinnedBy(null);
+        }
+    }
+
     public static List<Conversation> listFromJsonArray(String response) throws JSONException {
         List<Conversation> conversations = new ArrayList<>();
         JSONObject mainObject = new JSONObject(response);
@@ -237,6 +320,8 @@ public class Conversation implements Parcelable, Cloneable {
         if (conversationObject.has(CometChatConstants.ConversationKeys.KEY_LATEST_MESSAGE_ID)) {
             conversation.setLatestMessageId(conversationObject.optLong(CometChatConstants.ConversationKeys.KEY_LATEST_MESSAGE_ID, -1));
         }
+        // Pin Conversation attributes — single parse chokepoint.
+        applyPinAttributes(conversation, conversationObject);
         return conversation;
     }
 
@@ -253,6 +338,8 @@ public class Conversation implements Parcelable, Cloneable {
                 ", unreadMentionsCount=" + unreadMentionsCount +
                 ", lastReadMessageId='" + lastReadMessageId + '\'' +
                 ", latestMessageId='" + latestMessageId + '\'' +
+                ", pinnedAt=" + pinnedAt +
+                ", pinnedBy='" + pinnedBy + '\'' +
                 '}';
     }
 
@@ -294,10 +381,12 @@ public class Conversation implements Parcelable, Cloneable {
         if (unreadMessageCount != that.unreadMessageCount) return false;
         if (updatedAt != that.updatedAt) return false;
         if (unreadMentionsCount != that.unreadMentionsCount) return false;
+        if (pinnedAt != that.pinnedAt) return false;
 
         // Compare String fields using ContentEqualsHelper
         if (!ContentEqualsHelper.stringsEqual(conversationId, that.conversationId)) return false;
         if (!ContentEqualsHelper.stringsEqual(conversationType, that.conversationType)) return false;
+        if (!ContentEqualsHelper.stringsEqual(pinnedBy, that.pinnedBy)) return false;
         if (lastReadMessageId != that.lastReadMessageId) return false;
 
         // Compare nested objects using contentEquals

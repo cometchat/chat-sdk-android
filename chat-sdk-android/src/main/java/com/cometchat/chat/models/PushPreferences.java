@@ -100,19 +100,30 @@ public class PushPreferences implements Parcelable, Cloneable {
         return jsonObject;
     }
 
+    /**
+     * Builds preferences from a wire map. A key that is absent, or present with a {@code null}
+     * value, leaves that preference unset — with one exception: {@code usePrivacyTemplate} is a
+     * primitive {@code boolean} and so has no unset state, and instead keeps its default of
+     * {@code false}. A null map yields an object in exactly that state: every nested section unset,
+     * {@code usePrivacyTemplate} left at {@code false}.
+     */
     public static PushPreferences fromMap(Map<String, Object> map) {
         PushPreferences pushPreferences = new PushPreferences();
-        if (map.containsKey(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_USE_PRIVACY_TEMPLATE)) {
-            pushPreferences.setUsePrivacyTemplate((boolean) map.get(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_USE_PRIVACY_TEMPLATE));
+        Object usePrivacyTemplate = PreferenceMaps.opt(map, CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_USE_PRIVACY_TEMPLATE);
+        if (usePrivacyTemplate != null) {
+            pushPreferences.setUsePrivacyTemplate((boolean) usePrivacyTemplate);
         }
-        if (map.containsKey(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_ONE_ON_ONE_PREFERENCES)) {
-            pushPreferences.setOneOnOnePreferences(OneOnOnePreferences.fromMap((Map<String, Integer>) map.get(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_ONE_ON_ONE_PREFERENCES)));
+        Object oneOnOnePreferences = PreferenceMaps.opt(map, CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_ONE_ON_ONE_PREFERENCES);
+        if (oneOnOnePreferences != null) {
+            pushPreferences.setOneOnOnePreferences(OneOnOnePreferences.fromMap((Map<String, Integer>) oneOnOnePreferences));
         }
-        if (map.containsKey(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_MUTE_PREFERENCES)) {
-            pushPreferences.setMutePreferences(MutePreferences.fromMap((Map<String, Object>) map.get(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_MUTE_PREFERENCES)));
+        Object mutePreferences = PreferenceMaps.opt(map, CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_MUTE_PREFERENCES);
+        if (mutePreferences != null) {
+            pushPreferences.setMutePreferences(MutePreferences.fromMap((Map<String, Object>) mutePreferences));
         }
-        if (map.containsKey(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_GROUP_PREFERENCES)) {
-            pushPreferences.setGroupPreferences(GroupPreferences.fromMap((Map<String, Integer>) map.get(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_GROUP_PREFERENCES)));
+        Object groupPreferences = PreferenceMaps.opt(map, CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_GROUP_PREFERENCES);
+        if (groupPreferences != null) {
+            pushPreferences.setGroupPreferences(GroupPreferences.fromMap((Map<String, Integer>) groupPreferences));
         }
         return pushPreferences;
     }

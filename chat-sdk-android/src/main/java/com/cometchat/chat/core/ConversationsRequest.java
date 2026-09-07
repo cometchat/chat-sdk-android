@@ -37,6 +37,8 @@ public class ConversationsRequest {
     private boolean unread;
     private boolean hideAgentic;
     private boolean onlyAgentic;
+    // Restricts the list to pinned conversations. Comma-separated tokens: "system", "me", or both.
+    private String pinnedBy;
 
     private ConversationsRequest(ConversationsRequestBuilder builder) {
         this.limit = builder.limit;
@@ -55,6 +57,7 @@ public class ConversationsRequest {
         this.totalPages = builder.page;
         this.hideAgentic = builder.hideAgentic;
         this.onlyAgentic = builder.onlyAgentic;
+        this.pinnedBy = builder.pinnedBy;
     }
 
     /**
@@ -94,7 +97,7 @@ public class ConversationsRequest {
         } else {
             if (nextPage <= totalPages && !inProgress) {
                 inProgress = true;
-                ApiConnection.getInstance().getConversations(limit, conversationType, withUserAndGroupTags, tags, withTags, nextPage, userTags, groupTags,includeBlockedUsers, withBlockedInfo, searchKeyword,unread,hideAgentic,onlyAgentic, new ApiConnection.APIConnectionListener() {
+                ApiConnection.getInstance().getConversations(limit, conversationType, withUserAndGroupTags, tags, withTags, nextPage, userTags, groupTags,includeBlockedUsers, withBlockedInfo, searchKeyword,unread,hideAgentic,onlyAgentic, pinnedBy, new ApiConnection.APIConnectionListener() {
                     @Override
                     public void onResponse(String response, final CometChatException ce) {
                         if (ce != null) {
@@ -318,6 +321,7 @@ public class ConversationsRequest {
         private int page;
         private boolean hideAgentic = false;
         private boolean onlyAgentic = false;
+        private String pinnedBy;
 
         /**
          * A method to set limit for the number of Conversations returned in a single iteration.
@@ -498,6 +502,23 @@ public class ConversationsRequest {
          */
         public ConversationsRequestBuilder onlyAgentic(boolean onlyAgentic) {
             this.onlyAgentic = onlyAgentic;
+            return this;
+        }
+
+        /**
+         * Restricts the list to pinned conversations only. Accepts
+         * {@link CometChatConstants.ConversationKeys#PINNED_BY_FILTER_SYSTEM} ({@code "system"}),
+         * {@link CometChatConstants.ConversationKeys#PINNED_BY_FILTER_ME} ({@code "me"}), or both as
+         * a comma-separated string (e.g. {@code "system,me"}). The default (unset) list already
+         * carries {@code pinnedAt}/{@code pinnedBy} on each row with pinned rows ordered on top, so
+         * this filter is only needed to fetch the pinned set standalone.
+         *
+         * @param pinnedBy the filter token(s); any other value is rejected by the server as
+         *                 {@code ERR_BAD_REQUEST}
+         * @since <b>v5</b>
+         */
+        public ConversationsRequestBuilder setPinnedBy(String pinnedBy) {
+            this.pinnedBy = pinnedBy;
             return this;
         }
 

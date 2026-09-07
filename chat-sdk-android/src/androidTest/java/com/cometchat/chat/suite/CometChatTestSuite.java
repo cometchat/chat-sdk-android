@@ -12,6 +12,9 @@ import com.cometchat.chat.groups.update.UpdateGroupTest;
 import com.cometchat.chat.messaging.fetch.FetchMessageTest;
 import com.cometchat.chat.messaging.mentions.MentionsTest;
 import com.cometchat.chat.messaging.reactions.ReactionsTest;
+import com.cometchat.chat.messaging.pinsave.PinSaveMessageTest;
+import com.cometchat.chat.messaging.threads.ThreadSubscriptionTest;
+import com.cometchat.chat.models.ThreadPinModelsParcelTest;
 import com.cometchat.chat.messaging.send.CustomMessageTest;
 import com.cometchat.chat.messaging.send.TextMessageTest;
 import com.cometchat.chat.users.fetch.FetchUsersTest;
@@ -56,6 +59,9 @@ import org.junit.runners.Suite;
         UpdateGroupTest.class,
         MentionsTest.class,
         ReactionsTest.class,
+        PinSaveMessageTest.class,
+        ThreadSubscriptionTest.class,
+        ThreadPinModelsParcelTest.class,
         LeaveGroupTest.class,
         DeleteGroupTest.class,
         ResetTestApp1.class

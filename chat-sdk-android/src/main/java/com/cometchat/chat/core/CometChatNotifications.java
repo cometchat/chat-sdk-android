@@ -4,11 +4,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.cometchat.chat.constants.CometChatNotificationsConstants;
-import com.cometchat.chat.enums.DayOfWeek;
 import com.cometchat.chat.enums.PushPlatforms;
 import com.cometchat.chat.exceptions.CometChatException;
 import com.cometchat.chat.helpers.Logger;
-import com.cometchat.chat.models.DaySchedule;
 import com.cometchat.chat.models.MutedConversation;
 import com.cometchat.chat.models.NotificationPreferences;
 import com.cometchat.chat.models.PushPreferences;
@@ -18,7 +16,6 @@ import org.json.JSONObject;
 
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.TimeZone;
 
 /**
@@ -535,99 +532,6 @@ public final class CometChatNotifications {
                 }
             }
         });
-    }
-
-    private static JSONObject getUpdatePushPreferenceJsonRequest(PushPreferences pushPreferences) {
-        final JSONObject requestJsonObject = new JSONObject();
-        try {
-            //OneOnOne Pref
-            if (pushPreferences.getOneOnOnePreferences() != null) {
-                JSONObject oneOnOnePreferencesJsonObj = new JSONObject();
-                if (pushPreferences.getOneOnOnePreferences().getMessagesPreference() != null) {
-                    oneOnOnePreferencesJsonObj.put(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_MESSAGES, pushPreferences.getOneOnOnePreferences().getMessagesPreference().getValue());
-                }
-                if (pushPreferences.getOneOnOnePreferences().getRepliesPreference() != null) {
-                    oneOnOnePreferencesJsonObj.put(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REPLIES, pushPreferences.getOneOnOnePreferences().getRepliesPreference().getValue());
-                }
-                if (pushPreferences.getOneOnOnePreferences().getReactionsPreference() != null) {
-                    oneOnOnePreferencesJsonObj.put(CometChatNotificationsConstants.OneOnOnePreferencesKeys.ONE_ON_ONE_REACTIONS, pushPreferences.getOneOnOnePreferences().getReactionsPreference().getValue());
-                }
-                if (oneOnOnePreferencesJsonObj.length() > 0) {
-                    requestJsonObject.put(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_ONE_ON_ONE_PREFERENCES, oneOnOnePreferencesJsonObj);
-                }
-            }
-
-            //GroupPreferences Pref
-            if (pushPreferences.getGroupPreferences() != null) {
-                JSONObject groupPreferencesJsonObj = new JSONObject();
-                if (pushPreferences.getGroupPreferences().getMessagesPreference() != null) {
-                    groupPreferencesJsonObj.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MESSAGES, pushPreferences.getGroupPreferences().getMessagesPreference().getValue());
-                }
-                if (pushPreferences.getGroupPreferences().getRepliesPreference() != null) {
-                    groupPreferencesJsonObj.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REPLIES, pushPreferences.getGroupPreferences().getRepliesPreference().getValue());
-                }
-                if (pushPreferences.getGroupPreferences().getMemberLeftPreference() != null) {
-                    groupPreferencesJsonObj.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_LEFT, pushPreferences.getGroupPreferences().getMemberLeftPreference().getValue());
-                }
-                if (pushPreferences.getGroupPreferences().getMemberAddedPreference() != null) {
-                    groupPreferencesJsonObj.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_ADDED, pushPreferences.getGroupPreferences().getMemberAddedPreference().getValue());
-                }
-                if (pushPreferences.getGroupPreferences().getMemberJoinedPreference() != null) {
-                    groupPreferencesJsonObj.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_JOINED, pushPreferences.getGroupPreferences().getMemberJoinedPreference().getValue());
-                }
-                if (pushPreferences.getGroupPreferences().getMemberKickedPreference() != null) {
-                    groupPreferencesJsonObj.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_KICKED, pushPreferences.getGroupPreferences().getMemberKickedPreference().getValue());
-                }
-                if (pushPreferences.getGroupPreferences().getMemberBannedPreference() != null) {
-                    groupPreferencesJsonObj.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_BANNED, pushPreferences.getGroupPreferences().getMemberBannedPreference().getValue());
-                }
-                if (pushPreferences.getGroupPreferences().getMemberUnbannedPreference() != null) {
-                    groupPreferencesJsonObj.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_UNBANNED, pushPreferences.getGroupPreferences().getMemberUnbannedPreference().getValue());
-                }
-                if (pushPreferences.getGroupPreferences().getMemberScopeChangedPreference() != null) {
-                    groupPreferencesJsonObj.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_MEMBER_SCOPE_CHANGED, pushPreferences.getGroupPreferences().getMemberScopeChangedPreference().getValue());
-                }
-                if (pushPreferences.getGroupPreferences().getReactionsPreference() != null) {
-                    groupPreferencesJsonObj.put(CometChatNotificationsConstants.GroupPreferencesKeys.KEY_GROUP_REACTIONS, pushPreferences.getGroupPreferences().getReactionsPreference().getValue());
-                }
-                if (groupPreferencesJsonObj.length() > 0) {
-                    requestJsonObject.put(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_GROUP_PREFERENCES, groupPreferencesJsonObj);
-                }
-            }
-
-            //Mute Pref
-            if (pushPreferences.getMutePreferences() != null) {
-                JSONObject mutePreferencesJsonObj = new JSONObject();
-                JSONObject dayObj = new JSONObject();
-                if (pushPreferences.getMutePreferences().getDNDPreference() != null) {
-                    mutePreferencesJsonObj.put(CometChatNotificationsConstants.MutePreferencesKeys.KEY_DND, pushPreferences.getMutePreferences().getDNDPreference().getValue());
-                }
-                if (pushPreferences.getMutePreferences().getSchedulePreference() != null) {
-                    for (Map.Entry<DayOfWeek, DaySchedule> entry : pushPreferences.getMutePreferences().getSchedulePreference().entrySet()) {
-                        JSONObject dayScheduleObj = new JSONObject();
-                        DaySchedule daySchedule = entry.getValue();
-                        if (daySchedule.getFrom() > 0 && daySchedule.getTo() > 0) {
-                            dayScheduleObj.put(CometChatNotificationsConstants.DayScheduleKeys.KEY_FROM, daySchedule.getFrom());
-                            dayScheduleObj.put(CometChatNotificationsConstants.DayScheduleKeys.KEY_TO, daySchedule.getTo());
-                            dayScheduleObj.put(CometChatNotificationsConstants.DayScheduleKeys.KEY_DND, daySchedule.getDnd());
-                        }
-                        if (dayScheduleObj.length() > 0) {
-                            DayOfWeek day = entry.getKey();
-                            dayObj.put(day.getDayName(), dayScheduleObj);
-                        }
-                    }
-                    if (dayObj.length() > 0) {
-                        mutePreferencesJsonObj.put(CometChatNotificationsConstants.MutePreferencesKeys.KEY_SCHEDULE, dayObj);
-                    }
-                }
-                if (mutePreferencesJsonObj.length() > 0) {
-                    requestJsonObject.put(CometChatNotificationsConstants.NotificationPreferencesKeys.KEY_MUTE_PREFERENCES, mutePreferencesJsonObj);
-                }
-            }
-        } catch (Exception e) {
-            Logger.error(e.toString());
-        }
-        return requestJsonObject;
     }
 
 }

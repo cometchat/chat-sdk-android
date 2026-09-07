@@ -204,6 +204,9 @@ public class AIAssistantMessage extends BaseMessage {
                 aiAssistantMessage.setDeletedAt(jsonObject.getLong(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_AT));
             if (jsonObject.has(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_BY))
                 aiAssistantMessage.setDeletedBy(jsonObject.getString(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_BY));
+            // Pin & Save attributes — single parse chokepoint (PIN_SAVE_CONTRACT).
+            BaseMessage.applyPinSaveAttributes(aiAssistantMessage, jsonObject);
+            com.cometchat.chat.utils.ThreadParser.applyThreadAttributes(aiAssistantMessage, jsonObject);
             if (jsonObject.has(CometChatConstants.ResponseKeys.KEY_DATA)) {
                 JSONObject dataObject = jsonObject.getJSONObject(CometChatConstants.ResponseKeys.KEY_DATA);
                 if (dataObject.has(CometChatConstants.MessageKeys.KEY_AGENTIC_TEXT)) {

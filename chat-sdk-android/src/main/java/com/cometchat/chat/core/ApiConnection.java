@@ -126,6 +126,13 @@ class ApiConnection {
     private static final String URL_UPDATE_USER = "/users/%s";
     private static final String URL_SEND_THREADED_MESSAGE = "/messages/%s/thread";
     private static final String URL_GET_THREADED_MESSAGES = "/messages/%s/thread";
+    // Subscribe (POST) / unsubscribe (DELETE) to a thread. The version prefix is added by getApiUrl();
+    // never write "v3" into the path or it resolves to /v3.0/v3/...
+    private static final String URL_THREAD_SUBSCRIPTION = "/messages/%s/thread/subscription";
+    // Participated-threads list (GET). Bare, or scoped to a group / user (A14). No "v3" in the path.
+    private static final String URL_THREADS = "/threads";
+    private static final String URL_GROUP_THREADS = "/groups/%s/threads";
+    private static final String URL_USER_THREADS = "/users/%s/threads";
     private static final String URL_POLL_MESSAGES = "/messages";
     private static final String URL_ANALYTICS_PING = "/ping";
     private static final String URL_TRANSFER_OWNERSHIP = "/groups/%s/owner";
@@ -137,6 +144,9 @@ class ApiConnection {
     private static final String URL_DELETE_GROUP_CONVERSATION = "/groups/%s/conversation";
     private static final String URL_GET_USER_CONVERSATION = "/users/%s/conversation";
     private static final String URL_GET_GROUP_CONVERSATION = "/groups/%s/conversation";
+    // Pin Conversation (per-user). Bare paths — getApiUrl() prepends v3.0.
+    private static final String URL_USER_CONVERSATION_PIN = "/users/%s/conversation/pin";
+    private static final String URL_GROUP_CONVERSATION_PIN = "/groups/%s/conversation/pin";
     private static final String URL_GET_ONLINE_USERS = "/api/%s/online-members";
     private static final String URL_SWITCH_AUDIO_CALL_TO_VIDEO = "/calls/%s/type";
     private static final String URL_AI_GET_USER_SMART_REPLIES = "/ai/smart-replies/users/%s";
@@ -150,6 +160,12 @@ class ApiConnection {
     private static final String URL_USER_SESSIONS = "/user_sessions";
     private static final String URL_REACTIONS = "/messages/%s/reactions/%s";
     private static final String URL_REACTIONS_WITHOUT_REACTION = "/messages/%s/reactions";
+    // Pin & Save message endpoints. Bare paths — getApiUrl() prepends v3.0; never write "v3" here.
+    private static final String URL_PIN_MESSAGE = "/messages/%s/pin";
+    private static final String URL_SAVE_MESSAGE = "/messages/%s/save";
+    private static final String URL_USER_PINNED_MESSAGES = "/users/%s/messages";
+    private static final String URL_GROUP_PINNED_MESSAGES = "/groups/%s/messages";
+    private static final String URL_SAVED_MESSAGES = "/messages";
     private static final String MID_URL_NOTIFICATION_PUSH = "/notifications/push/v1";
     private static final String MID_URL_NOTIFICATION = "/notifications/v1";
     private static final String URL_NOTIFICATION_GET_PUSH_PREFERENCES_PUSH = MID_URL_NOTIFICATION_PUSH + "/preferences";
@@ -858,7 +874,7 @@ class ApiConnection {
     }
 
     // MessagesRequest class api methods
-    void getThreadedMessages(long parentMessageId, int limit, @CometChatConstants.Affix String affix, long timestamp, long messageId, boolean unread, boolean hideMessagesFromBlockedUsers, String searchKeyword, long updatedAfter, boolean updatesOnly, List<String> categories, List<String> types, boolean hideDeleted, List<String> tags, boolean withTags, boolean interactionGoalCompleted, boolean mentionsWithTagInfo, boolean mentionsWithBlockedInfo, boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean withParent, boolean hideQuotedMessages, APIConnectionListener listener) {
+    void getThreadedMessages(long parentMessageId, int limit, @CometChatConstants.Affix String affix, long timestamp, long messageId, boolean unread, boolean hideMessagesFromBlockedUsers, String searchKeyword, long updatedAfter, boolean updatesOnly, List<String> categories, List<String> types, boolean hideDeleted, List<String> tags, boolean withTags, boolean interactionGoalCompleted, boolean mentionsWithTagInfo, boolean mentionsWithBlockedInfo, boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean withParent, boolean hideQuotedMessages, boolean withThreadSubscribed, APIConnectionListener listener) {
         HashMap<String, String> queryParams = new HashMap<String, String>();
         queryParams.put(CometChatConstants.PaginationKeys.KEY_PER_PAGE, String.valueOf(limit));
         queryParams.put(CometChatConstants.PaginationKeys.KEY_AFFIX, affix);
@@ -910,11 +926,14 @@ class ApiConnection {
         if (hideQuotedMessages) {
             queryParams.put(CometChatConstants.MessageKeys.KEY_HIDE_QUOTED_MESSAGES, String.valueOf(1));
         }
+        if (withThreadSubscribed) {
+            queryParams.put(CometChatConstants.MessageKeys.KEY_WITH_THREAD_SUBSCRIBED, String.valueOf(1));
+        }
         Request getConversationsRequest = createGET(getApiUrl(String.format(URL_GET_THREADED_MESSAGES, String.valueOf(parentMessageId))), getDefaultHeaders(), queryParams);
         makeApiCall(getConversationsRequest, listener, false);
     }
 
-    void getUserConversations(String UID, int limit, @CometChatConstants.Affix String affix, long timestamp, long messageId, boolean unread, boolean hideMessagesFromBlockedUsers, String searchKeyword, long updatedAfter, boolean updatesOnly, List<String> categories, List<String> types, boolean hideReplies, boolean hideDeleted, List<String> tags, boolean withTags, boolean interactionGoalCompleted, boolean mentionsWithTagInfo, boolean mentionsWithBlockedInfo, boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean hideQuotedMessages, APIConnectionListener listener) {
+    void getUserConversations(String UID, int limit, @CometChatConstants.Affix String affix, long timestamp, long messageId, boolean unread, boolean hideMessagesFromBlockedUsers, String searchKeyword, long updatedAfter, boolean updatesOnly, List<String> categories, List<String> types, boolean hideReplies, boolean hideDeleted, List<String> tags, boolean withTags, boolean interactionGoalCompleted, boolean mentionsWithTagInfo, boolean mentionsWithBlockedInfo, boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean hideQuotedMessages, boolean withThreadSubscribed, APIConnectionListener listener) {
         HashMap<String, String> queryParams = new HashMap<String, String>();
         queryParams.put(CometChatConstants.PaginationKeys.KEY_PER_PAGE, String.valueOf(limit));
         queryParams.put(CometChatConstants.PaginationKeys.KEY_AFFIX, affix);
@@ -964,13 +983,16 @@ class ApiConnection {
             queryParams.put(CometChatConstants.MessageKeys.KEY_ATTACHMENT_TYPE, CometChatUtils.getCSStringFromList(CometChatUtils.getListOfStringsFromType(attachmentTypes)));
         if (hideQuotedMessages) {
             queryParams.put(CometChatConstants.MessageKeys.KEY_HIDE_QUOTED_MESSAGES, String.valueOf(1));
+        }
+        if (withThreadSubscribed) {
+            queryParams.put(CometChatConstants.MessageKeys.KEY_WITH_THREAD_SUBSCRIBED, String.valueOf(1));
         }
 
         Request getConversationsRequest = createGET(getApiUrl(String.format(URL_USER_GET_CONVERSATIONS, UID)), getDefaultHeaders(), queryParams);
         makeApiCall(getConversationsRequest, listener, false);
     }
 
-    void getGroupConversations(String GUID, int limit, @CometChatConstants.Affix String affix, long timestamp, long messageId, boolean unread, boolean hideMessagesFromBlockedUsers, String searchKeyword, long updatedAfter, boolean updatesOnly, List<String> categories, List<String> types, boolean hideReplies, boolean hideDeleted, List<String> tags, boolean withTags, boolean interactionGoalCompleted, boolean mentionsWithTagInfo, boolean mentionsWithBlockedInfo, boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean hideQuotedMessages, APIConnectionListener listener) {
+    void getGroupConversations(String GUID, int limit, @CometChatConstants.Affix String affix, long timestamp, long messageId, boolean unread, boolean hideMessagesFromBlockedUsers, String searchKeyword, long updatedAfter, boolean updatesOnly, List<String> categories, List<String> types, boolean hideReplies, boolean hideDeleted, List<String> tags, boolean withTags, boolean interactionGoalCompleted, boolean mentionsWithTagInfo, boolean mentionsWithBlockedInfo, boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean hideQuotedMessages, boolean withThreadSubscribed, APIConnectionListener listener) {
         HashMap<String, String> queryParams = new HashMap<String, String>();
         queryParams.put(CometChatConstants.PaginationKeys.KEY_PER_PAGE, String.valueOf(limit));
         queryParams.put(CometChatConstants.PaginationKeys.KEY_AFFIX, affix);
@@ -1021,12 +1043,15 @@ class ApiConnection {
         if (hideQuotedMessages) {
             queryParams.put(CometChatConstants.MessageKeys.KEY_HIDE_QUOTED_MESSAGES, String.valueOf(1));
         }
+        if (withThreadSubscribed) {
+            queryParams.put(CometChatConstants.MessageKeys.KEY_WITH_THREAD_SUBSCRIBED, String.valueOf(1));
+        }
 
         Request getConversationsRequest = createGET(getApiUrl(String.format(URL_GROUP_GET_CONVERSATIONS, GUID)), getDefaultHeaders(), queryParams);
         makeApiCall(getConversationsRequest, listener, false);
     }
 
-    void getUserConversationsInGroup(String UID, String GUID, int limit, @CometChatConstants.Affix String affix, long timestamp, long messageId, boolean unread, boolean hideMessagesFromBlockedUsers, String searchKeyword, long updatedAfter, boolean updatesOnly, List<String> categories, List<String> types, boolean hideReplies, boolean hideDeleted, List<String> tags, boolean withTags, boolean interactionGoalCompleted, boolean mentionsWithTagInfo, boolean mentionsWithBlockedInfo, boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean hideQuotedMessages, APIConnectionListener listener) {
+    void getUserConversationsInGroup(String UID, String GUID, int limit, @CometChatConstants.Affix String affix, long timestamp, long messageId, boolean unread, boolean hideMessagesFromBlockedUsers, String searchKeyword, long updatedAfter, boolean updatesOnly, List<String> categories, List<String> types, boolean hideReplies, boolean hideDeleted, List<String> tags, boolean withTags, boolean interactionGoalCompleted, boolean mentionsWithTagInfo, boolean mentionsWithBlockedInfo, boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean hideQuotedMessages, boolean withThreadSubscribed, APIConnectionListener listener) {
         HashMap<String, String> queryParams = new HashMap<String, String>();
         queryParams.put(CometChatConstants.PaginationKeys.KEY_PER_PAGE, String.valueOf(limit));
         queryParams.put(CometChatConstants.PaginationKeys.KEY_AFFIX, affix);
@@ -1078,12 +1103,15 @@ class ApiConnection {
         if (hideQuotedMessages) {
             queryParams.put(CometChatConstants.MessageKeys.KEY_HIDE_QUOTED_MESSAGES, String.valueOf(1));
         }
+        if (withThreadSubscribed) {
+            queryParams.put(CometChatConstants.MessageKeys.KEY_WITH_THREAD_SUBSCRIBED, String.valueOf(1));
+        }
 
         Request getConversationsRequest = createGET(getApiUrl(String.format(URL_GROUP_GET_CONVERSATIONS, GUID)), getDefaultHeaders(), queryParams);
         makeApiCall(getConversationsRequest, listener, false);
     }
 
-    void getAllMessages(int limit, @CometChatConstants.Affix String affix, long timestamp, long messageId, boolean unread, boolean hideMessagesFromBlockedUsers, String searchKeyword, long updatedAfter, boolean updatesOnly, List<String> categories, List<String> types, boolean hideReplies, boolean hideDeleted, List<String> tags, boolean withTags, boolean interactionGoalCompleted, boolean mentionsWithTagInfo, boolean mentionsWithBlockedInfo, boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean hideQuotedMessages, APIConnectionListener listener) {
+    void getAllMessages(int limit, @CometChatConstants.Affix String affix, long timestamp, long messageId, boolean unread, boolean hideMessagesFromBlockedUsers, String searchKeyword, long updatedAfter, boolean updatesOnly, List<String> categories, List<String> types, boolean hideReplies, boolean hideDeleted, List<String> tags, boolean withTags, boolean interactionGoalCompleted, boolean mentionsWithTagInfo, boolean mentionsWithBlockedInfo, boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean hideQuotedMessages, boolean withThreadSubscribed, APIConnectionListener listener) {
         HashMap<String, String> queryParams = new HashMap<String, String>();
         queryParams.put(CometChatConstants.PaginationKeys.KEY_PER_PAGE, String.valueOf(limit));
         queryParams.put(CometChatConstants.PaginationKeys.KEY_AFFIX, affix);
@@ -1134,6 +1162,9 @@ class ApiConnection {
         if (hideQuotedMessages) {
             queryParams.put(CometChatConstants.MessageKeys.KEY_HIDE_QUOTED_MESSAGES, String.valueOf(1));
         }
+        if (withThreadSubscribed) {
+            queryParams.put(CometChatConstants.MessageKeys.KEY_WITH_THREAD_SUBSCRIBED, String.valueOf(1));
+        }
 
         Request getAllMessagesRequest = createGET(getApiUrl(URL_GET_USERS_MESSAGES), getDefaultHeaders(), queryParams);
         makeApiCall(getAllMessagesRequest, listener, false);
@@ -1164,12 +1195,18 @@ class ApiConnection {
     }
 
     void getMessageReceipts(long messageId, APIConnectionListener listener) {
-        Request messageDetailsRequest = createGET(getApiUrl(String.format(URL_MESSAGE_DETAILS, messageId)), getDefaultHeaders(), null);
+        HashMap<String, String> queryParams = new HashMap<>();
+        // Message-detail fetches always opt in, so a cold deep-link renders the thread toggle.
+        queryParams.put(CometChatConstants.MessageKeys.KEY_WITH_THREAD_SUBSCRIBED, String.valueOf(1));
+        Request messageDetailsRequest = createGET(getApiUrl(String.format(URL_MESSAGE_DETAILS, messageId)), getDefaultHeaders(), queryParams);
         makeApiCall(messageDetailsRequest, listener, false);
     }
 
     void getMessageDetails(long messageId, APIConnectionListener listener) {
-        Request messageDetailsRequest = createGET(getApiUrl(String.format(URL_MESSAGE_DETAILS, messageId)), getDefaultHeaders(), null);
+        HashMap<String, String> queryParams = new HashMap<>();
+        // Message-detail fetches always opt in, so a cold deep-link renders the thread toggle.
+        queryParams.put(CometChatConstants.MessageKeys.KEY_WITH_THREAD_SUBSCRIBED, String.valueOf(1));
+        Request messageDetailsRequest = createGET(getApiUrl(String.format(URL_MESSAGE_DETAILS, messageId)), getDefaultHeaders(), queryParams);
         makeApiCall(messageDetailsRequest, listener, false);
     }
 
@@ -1301,6 +1338,43 @@ class ApiConnection {
         makeApiCall(deleteMessageRequest, listener, false);
     }
 
+    void subscribeToThread(long parentMessageId, APIConnectionListener listener) {
+        Request subscribeRequest = createPOST(getApiUrl(String.format(URL_THREAD_SUBSCRIPTION, parentMessageId)), getDefaultHeaders(), null);
+        makeApiCall(subscribeRequest, listener, false);
+    }
+
+    void unsubscribeFromThread(long parentMessageId, APIConnectionListener listener) {
+        Request unsubscribeRequest = createDELETE(getApiUrl(String.format(URL_THREAD_SUBSCRIPTION, parentMessageId)), getDefaultHeaders(), null);
+        makeApiCall(unsubscribeRequest, listener, false);
+    }
+
+    void getThreads(int limit, boolean participatedByMe, String guid, String uid, String affix, long updatedAt, long id, APIConnectionListener listener) {
+        HashMap<String, String> queryParams = new HashMap<>();
+        queryParams.put(CometChatConstants.PaginationKeys.KEY_PER_PAGE, String.valueOf(limit));
+        // participatedByMe is always sent on the wire, even when true.
+        queryParams.put(CometChatConstants.ThreadKeys.KEY_PARTICIPATED_BY_ME, String.valueOf(participatedByMe));
+        // The cursor (affix + updatedAt + id) rides only on subsequent pages; the first page has no
+        // cursor. updatedAt alone is tie-prone — id breaks the tie, exactly as sentAt + id does on
+        // /messages (see getAllMessages) — so no row can be skipped inside a same-second block.
+        if (updatedAt > 0) {
+            queryParams.put(CometChatConstants.PaginationKeys.KEY_AFFIX, affix);
+            queryParams.put(CometChatConstants.ThreadKeys.KEY_UPDATED_AT, String.valueOf(updatedAt));
+            if (id > 0) {
+                queryParams.put(CometChatConstants.PaginationKeys.KEY_FIELD_MESSAGEID, String.valueOf(id));
+            }
+        }
+        String url;
+        if (guid != null) {
+            url = getApiUrl(String.format(URL_GROUP_THREADS, guid));
+        } else if (uid != null) {
+            url = getApiUrl(String.format(URL_USER_THREADS, uid));
+        } else {
+            url = getApiUrl(URL_THREADS);
+        }
+        Request getThreadsRequest = createGET(url, getDefaultHeaders(), queryParams);
+        makeApiCall(getThreadsRequest, listener, false);
+    }
+
     // Add Members to group
 
     void addMembersToGroup(String GUID, List<GroupMember> members, List<String> bannedUserIds, APIConnectionListener listener) {
@@ -1402,7 +1476,7 @@ class ApiConnection {
     }
 
     // Conversations
-    void getConversations(int limit, @CometChatConstants.ConversationTypes String conversationType, boolean withUserAndGroupTags, List<String> tags, boolean withTags, int nextPage, List<String> userTags, List<String> groupTags, boolean includeBlockedUsers, boolean withBlockedInfo,String searchKeyword, boolean unread, boolean hideAgentic, boolean onlyAgentic, APIConnectionListener listener) {
+    void getConversations(int limit, @CometChatConstants.ConversationTypes String conversationType, boolean withUserAndGroupTags, List<String> tags, boolean withTags, int nextPage, List<String> userTags, List<String> groupTags, boolean includeBlockedUsers, boolean withBlockedInfo,String searchKeyword, boolean unread, boolean hideAgentic, boolean onlyAgentic, String pinnedBy, APIConnectionListener listener) {
         HashMap<String, String> queryParams = new HashMap<String, String>();
         queryParams.put(CometChatConstants.Params.LIMIT, String.valueOf(limit));
         if (conversationType != null)
@@ -1431,6 +1505,8 @@ class ApiConnection {
             queryParams.put(CometChatConstants.Params.HIDE_AGENTIC, String.valueOf(1));
         if (onlyAgentic)
             queryParams.put(CometChatConstants.Params.ONLY_AGENTIC, String.valueOf(1));
+        if (pinnedBy != null && !pinnedBy.isEmpty())
+            queryParams.put(CometChatConstants.ConversationKeys.KEY_CONVERSATION_PINNED_BY, pinnedBy);
 
         Request conversationRequest = createGET(getApiUrl(URL_GET_CONVERSATIONS), getDefaultHeaders(), queryParams);
         makeApiCall(conversationRequest, listener, false);
@@ -1445,6 +1521,22 @@ class ApiConnection {
         }
         Request getConversationRequest = createGET(getApiUrl(url), getDefaultHeaders(), null);
         makeApiCall(getConversationRequest, listener, false);
+    }
+
+    void pinConversation(String conversationWith, String conversationType, APIConnectionListener listener) {
+        String url = conversationType.equalsIgnoreCase(CometChatConstants.CONVERSATION_TYPE_USER)
+                ? String.format(URL_USER_CONVERSATION_PIN, conversationWith)
+                : String.format(URL_GROUP_CONVERSATION_PIN, conversationWith);
+        Request request = createPOST(getApiUrl(url), getDefaultHeaders(), null);
+        makeApiCall(request, listener, false);
+    }
+
+    void unpinConversation(String conversationWith, String conversationType, APIConnectionListener listener) {
+        String url = conversationType.equalsIgnoreCase(CometChatConstants.CONVERSATION_TYPE_USER)
+                ? String.format(URL_USER_CONVERSATION_PIN, conversationWith)
+                : String.format(URL_GROUP_CONVERSATION_PIN, conversationWith);
+        Request request = createDELETE(getApiUrl(url), getDefaultHeaders(), null);
+        makeApiCall(request, listener, false);
     }
 
     void tagConversation(String conversationWith, String conversationType, List<String> tags, APIConnectionListener listener) {
@@ -1659,6 +1751,66 @@ class ApiConnection {
         } catch (Exception e) {
             listener.onResponse(null, new CometChatException(CometChatConstants.Errors.ERROR_UNHANDLED_EXCEPTION, e.toString()));
         }
+    }
+
+    // Pin & Save message
+
+    void pinMessage(long messageId, APIConnectionListener listener) {
+        Request pinRequest = createPOST(getApiUrl(String.format(URL_PIN_MESSAGE, messageId)), getDefaultHeaders(), null);
+        makeApiCall(pinRequest, listener, false);
+    }
+
+    void unpinMessage(long messageId, APIConnectionListener listener) {
+        Request unpinRequest = createDELETE(getApiUrl(String.format(URL_PIN_MESSAGE, messageId)), getDefaultHeaders(), null);
+        makeApiCall(unpinRequest, listener, false);
+    }
+
+    void saveMessage(long messageId, APIConnectionListener listener) {
+        Request saveRequest = createPOST(getApiUrl(String.format(URL_SAVE_MESSAGE, messageId)), getDefaultHeaders(), null);
+        makeApiCall(saveRequest, listener, false);
+    }
+
+    void unsaveMessage(long messageId, APIConnectionListener listener) {
+        Request unsaveRequest = createDELETE(getApiUrl(String.format(URL_SAVE_MESSAGE, messageId)), getDefaultHeaders(), null);
+        makeApiCall(unsaveRequest, listener, false);
+    }
+
+    /**
+     * Fetches pinned messages for a conversation. The list sorts by pinnedAt DESC, which no
+     * id/sentAt cursor reproduces, so the server-provided cursor is echoed back opaquely.
+     */
+    void getPinnedMessages(int limit, String uid, String guid, String affix, String cursorId, APIConnectionListener listener) {
+        HashMap<String, String> queryParams = new HashMap<>();
+        queryParams.put(CometChatConstants.PaginationKeys.KEY_PER_PAGE, String.valueOf(limit));
+        queryParams.put(CometChatConstants.Params.KEY_PINNED, CometChatConstants.Params.KEY_FLAG_ON);
+        if (cursorId != null) {
+            queryParams.put(CometChatConstants.PaginationKeys.KEY_AFFIX, affix);
+            queryParams.put(CometChatConstants.PaginationKeys.KEY_PAGINATION_ID, cursorId);
+        }
+        String url;
+        if (guid != null) {
+            url = getApiUrl(String.format(URL_GROUP_PINNED_MESSAGES, guid));
+        } else {
+            url = getApiUrl(String.format(URL_USER_PINNED_MESSAGES, uid));
+        }
+        Request getPinnedRequest = createGET(url, getDefaultHeaders(), queryParams);
+        makeApiCall(getPinnedRequest, listener, false);
+    }
+
+    /**
+     * Fetches the current user's saved messages across all conversations, sorted savedAt DESC.
+     * Uses the same opaque server cursor as the pinned list.
+     */
+    void getSavedMessages(int limit, String affix, String cursorId, APIConnectionListener listener) {
+        HashMap<String, String> queryParams = new HashMap<>();
+        queryParams.put(CometChatConstants.PaginationKeys.KEY_PER_PAGE, String.valueOf(limit));
+        queryParams.put(CometChatConstants.Params.KEY_SAVED, CometChatConstants.Params.KEY_FLAG_ON);
+        if (cursorId != null) {
+            queryParams.put(CometChatConstants.PaginationKeys.KEY_AFFIX, affix);
+            queryParams.put(CometChatConstants.PaginationKeys.KEY_PAGINATION_ID, cursorId);
+        }
+        Request getSavedRequest = createGET(getApiUrl(URL_SAVED_MESSAGES), getDefaultHeaders(), queryParams);
+        makeApiCall(getSavedRequest, listener, false);
     }
 
     void getReactedUsersList(int limit, String affix, long messageId, String reactionId, String emoji, APIConnectionListener listener) {
@@ -2572,10 +2724,19 @@ class ApiConnection {
                 JSONObject mainObject = new JSONObject(responseBody);
                 JSONObject errorObject = mainObject.getJSONObject(CometChatConstants.ResponseKeys.KEY_ERROR);
                 String details = null;
-                if (errorObject.has(CometChatConstants.ResponseKeys.KEY_ERROR_DETAILS)) {
-                    details = errorObject.getJSONObject(CometChatConstants.ResponseKeys.KEY_ERROR_DETAILS).toString();
+                Map<String, Object> errorParams = null;
+                if (errorObject.has(CometChatConstants.ResponseKeys.KEY_ERROR_DETAILS)
+                        && !errorObject.isNull(CometChatConstants.ResponseKeys.KEY_ERROR_DETAILS)) {
+                    Object detailsValue = errorObject.get(CometChatConstants.ResponseKeys.KEY_ERROR_DETAILS);
+                    details = detailsValue.toString();
+                    // Surface structured error params (e.g. the pinned/saved cap `limit`, or the RBAC
+                    // scope on a permission denial) so callers read them programmatically instead of
+                    // string-parsing `details`.
+                    if (detailsValue instanceof JSONObject) {
+                        errorParams = jsonObjectToMap((JSONObject) detailsValue);
+                    }
                 }
-                listener.onResponse(null, new CometChatException(errorObject.getString(CometChatConstants.ResponseKeys.KEY_ERROR_CODE), errorObject.getString(CometChatConstants.ResponseKeys.KEY_ERROR_MESSAGE), details));
+                listener.onResponse(null, new CometChatException(errorObject.getString(CometChatConstants.ResponseKeys.KEY_ERROR_CODE), errorObject.getString(CometChatConstants.ResponseKeys.KEY_ERROR_MESSAGE), details, errorParams));
             } else if (responseCode == CometChatConstants.ResponseKeys.CODE_BAD_GATEWAY || responseCode == CometChatConstants.ResponseKeys.CODE_SERVICE_UNAVAILABLE || responseCode == CometChatConstants.ResponseKeys.CODE_GATEWAY_TIME_OUT) {
                 listener.onResponse(null, new CometChatException(CometChatConstants.Errors.FAILED_TO_FETCH, CometChatConstants.Errors.ERROR_DEFAULT_MESSAGE));
             } else {
@@ -2590,6 +2751,25 @@ class ApiConnection {
         } catch (Exception e) {
             listener.onResponse(null, new CometChatException(CometChatConstants.Errors.FAILED_TO_FETCH, CometChatConstants.Errors.ERROR_DEFAULT_MESSAGE));
         }
+    }
+
+    /**
+     * Flattens a JSON error-details object into a {@code Map<String, Object>} for
+     * {@link CometChatException#getErrorParams()}. Nested objects/arrays are kept as their
+     * JSON types; {@code null} JSON values are skipped.
+     */
+    private static Map<String, Object> jsonObjectToMap(JSONObject jsonObject) {
+        Map<String, Object> map = new HashMap<>();
+        Iterator<String> keys = jsonObject.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            Object value = jsonObject.opt(key);
+            if (value == null || value == JSONObject.NULL) {
+                continue;
+            }
+            map.put(key, value);
+        }
+        return map;
     }
 
     interface APIConnectionListener {

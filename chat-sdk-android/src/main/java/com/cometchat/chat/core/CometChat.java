@@ -19,6 +19,7 @@ import com.cometchat.chat.enums.AttachmentType;
 import com.cometchat.chat.exceptions.CometChatException;
 import com.cometchat.chat.helpers.CometChatHelper;
 import com.cometchat.chat.helpers.Logger;
+import com.cometchat.chat.utils.ThreadParser;
 import com.cometchat.chat.models.AIAssistantBaseEvent;
 import com.cometchat.chat.models.AIAssistantMessage;
 import com.cometchat.chat.models.AIAssistantToolStartedEvent;
@@ -86,6 +87,7 @@ public final class CometChat {
     private static ConcurrentHashMap<String,AIAssistantListener> aiAssistantListeners = new ConcurrentHashMap<>();
     private static ConcurrentHashMap<String, UserListener> userListeners = new ConcurrentHashMap<>();
     private static ConcurrentHashMap<String, GroupListener> groupListeners = new ConcurrentHashMap<>();
+    private static ConcurrentHashMap<String, ConversationListener> conversationListeners = new ConcurrentHashMap<>();
     private static ConcurrentHashMap<String, CallListener> callListeners = new ConcurrentHashMap<>();
     private static ConcurrentHashMap<String, TypingIndicator> startTypingMap = new ConcurrentHashMap<>();
     private static ConcurrentHashMap<String, TypingIndicator> endTypingMap = new ConcurrentHashMap<>();
@@ -115,6 +117,8 @@ public final class CometChat {
         DispatchController.getInstance().setTransientMessageListener(transientMessageReceivedListener);
         DispatchController.getInstance().setMessageReactionListener(messageReactionListener);
         DispatchController.getInstance().setModerationStatusListener(moderationStatusListener);
+        DispatchController.getInstance().setPinSaveActionListener(pinSaveActionListener);
+        DispatchController.getInstance().setConversationPinActionListener(conversationPinActionListener);
         DispatchController.getInstance().setAIAssistantListener(aiAssistantListener);
     }
 
@@ -462,6 +466,20 @@ public final class CometChat {
                         }
                     }
                 } else if (extMessage.getType().equalsIgnoreCase(CometChatConstants.ActionKeys.ACTION_TYPE_MESSAGE)) {
+                    // Legacy pin/save scaffolding: the live backend delivers pin/save as
+                    // type "message_pin"/"message_save" frames (dispatched via
+                    // DispatchController.PinSaveActionListener), not as Action envelopes — this
+                    // branch stays only in case an envelope form ever appears. The echo must be
+                    // consumed ONCE per frame, before the per-listener fan-out: consumption is
+                    // single-use, so checking inside the loop would suppress only the first
+                    // listener and double-fire the rest.
+                    final Action receivedActionMessage = (Action) extMessage;
+                    final String pinSaveAction = normalisedPinSaveActionOrNull(receivedActionMessage.getAction());
+                    if (pinSaveAction != null
+                        && receivedActionMessage.getActionOn() instanceof BaseMessage
+                        && consumePinSaveLocalEcho(((BaseMessage) receivedActionMessage.getActionOn()).getId(), pinSaveAction)) {
+                        return;
+                    }
                     Iterator it = messageListeners.entrySet().iterator();
                     while (it.hasNext()) {
                         final Map.Entry pair = (Map.Entry) it.next();
@@ -474,6 +492,18 @@ public final class CometChat {
                                         ((MessageListener) pair.getValue()).onMessageEdited(((BaseMessage) ((Action) extMessage).getActionOn()));
                                     } else if (receivedAction.getAction().equalsIgnoreCase(CometChatConstants.ActionKeys.ACTION_MESSAGE_DELETED)) {
                                         ((MessageListener) pair.getValue()).onMessageDeleted(((BaseMessage) ((Action) extMessage).getActionOn()));
+                                    } else if (receivedAction.getAction().equalsIgnoreCase(CometChatConstants.ActionKeys.ACTION_MESSAGE_PINNED)) {
+                                        ((MessageListener) pair.getValue()).onMessagePinned((BaseMessage) ((Action) extMessage).getActionOn());
+                                    } else if (receivedAction.getAction().equalsIgnoreCase(CometChatConstants.ActionKeys.ACTION_MESSAGE_UNPINNED)) {
+                                        ((MessageListener) pair.getValue()).onMessageUnpinned((BaseMessage) ((Action) extMessage).getActionOn());
+                                    } else if (receivedAction.getAction().equalsIgnoreCase(CometChatConstants.ActionKeys.ACTION_MESSAGE_SAVED)) {
+                                        // Save is private/multi-device: it is intentionally NOT gated by the
+                                        // deviceId == this-session self-suppression guard, so the acting
+                                        // user's other devices receive it. Only the acting session's own
+                                        // echo (its REST-driven local emit) is suppressed, above.
+                                        ((MessageListener) pair.getValue()).onMessageSaved((BaseMessage) ((Action) extMessage).getActionOn());
+                                    } else if (receivedAction.getAction().equalsIgnoreCase(CometChatConstants.ActionKeys.ACTION_MESSAGE_UNSAVED)) {
+                                        ((MessageListener) pair.getValue()).onMessageUnsaved((BaseMessage) ((Action) extMessage).getActionOn());
                                     }
                                 }
                             });
@@ -686,6 +716,68 @@ public final class CometChat {
                         @Override
                         public void run() {
                             ((MessageListener) pair.getValue()).onMessageModerated(baseMessage);
+                        }
+                    });
+                }
+            }
+        }
+    };
+
+    private static DispatchController.PinSaveActionListener pinSaveActionListener = new DispatchController.PinSaveActionListener() {
+        @Override
+        public void onPinSaveAction(final String action, final BaseMessage baseMessage) {
+            if (baseMessage == null) {
+                return;
+            }
+            // The acting session already applied this change via its REST-driven local emit;
+            // its own incoming frame is a duplicate. Consumed once per frame, BEFORE the
+            // per-listener fan-out (consumption is single-use). Other sessions (second device,
+            // other users for pin) pass straight through.
+            if (consumePinSaveLocalEcho(baseMessage.getId(), action)) {
+                return;
+            }
+            Iterator it = messageListeners.entrySet().iterator();
+            while (it.hasNext()) {
+                final Map.Entry pair = (Map.Entry) it.next();
+                if (pair.getValue() != null) {
+                    postOnMainThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            dispatchPinSaveCallback((MessageListener) pair.getValue(), action, baseMessage);
+                        }
+                    });
+                }
+            }
+        }
+    };
+
+    private static DispatchController.ConversationPinActionListener conversationPinActionListener = new DispatchController.ConversationPinActionListener() {
+        @Override
+        public void onConversationPinAction(final String action, final Conversation conversation) {
+            if (conversation == null) {
+                return;
+            }
+            // The acting session already applied this via its REST-driven local emit. The echo is
+            // keyed on (conversationType, conversationWith) — what the write side knew before its
+            // response arrived. A null key means the frame can't yield one: deliver rather than
+            // swallow (a missed suppression is a duplicate; a wrong one is a lost event).
+            String echoKey = conversationEchoKeyFrom(conversation);
+            if (echoKey != null && PinSaveEchoRegistry.consume(echoKey, action)) {
+                return;
+            }
+            final boolean pinned = CometChatConstants.ActionKeys.ACTION_CONVERSATION_PINNED.equals(action);
+            Iterator it = conversationListeners.entrySet().iterator();
+            while (it.hasNext()) {
+                final Map.Entry pair = (Map.Entry) it.next();
+                if (pair.getValue() != null) {
+                    postOnMainThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (pinned) {
+                                ((ConversationListener) pair.getValue()).onConversationPinned(conversation);
+                            } else {
+                                ((ConversationListener) pair.getValue()).onConversationUnpinned(conversation);
+                            }
                         }
                     });
                 }
@@ -1517,6 +1609,9 @@ public final class CometChat {
                                         boolean shouldAutoConnectOnRestart,
                                         final CallbackListener<User> listener) {
         rttConnection = null;
+        // Pending pin/save echo registrations — a previous user's in-flight write must
+        // not suppress this session's first genuine frame for the same message id.
+        PinSaveEchoRegistry.clearAll();
         CurrentUserRepo.insertCurrentUser(currentUser.toMap());
         SettingsRepo.insertSettings(settings);
         PreferenceHelper.saveLoggedInUID(currentUser.getUid());
@@ -1593,6 +1688,7 @@ public final class CometChat {
     }
 
     private static void logoutSuccess() {
+        PinSaveEchoRegistry.clearAll();
         Iterator it = loginListeners.entrySet().iterator();
         while (it.hasNext()) {
             final Map.Entry pair = (Map.Entry) it.next();
@@ -2069,6 +2165,121 @@ public final class CometChat {
         });
     }
 
+    /**
+     * Subscribes the logged-in user to a message thread, so they are notified of future replies.
+     * Idempotent, and allowed even when the parent message has no replies yet.
+     *
+     * <p><b>The callback is the acknowledgement</b> — there is no follow-up event, and the SDK stores
+     * nothing. To reflect the change in a UI, flip your own state when this resolves; the next fetch
+     * of the parent message will confirm it via {@link BaseMessage#isThreadSubscribed()}.
+     *
+     * @param parentMessageId  the id of the thread's root (parent) message.
+     * @param callbackListener receives the server acknowledgement string, or an error.
+     */
+    public static void subscribeToThread(final long parentMessageId, @NonNull final CometChat.CallbackListener<String> callbackListener) {
+        final String methodName = new Throwable()
+                .getStackTrace()[0]
+                .getMethodName();
+
+        if (parentMessageId <= 0) {
+            callbackListener.onError(new CometChatException(CometChatConstants.Errors.ERROR_INVALID_MESSAGEID, CometChatConstants.Errors.ERROR_INVALID_MESSAGEID_MESSAGE));
+            return;
+        }
+
+        ApiConnection.getInstance().subscribeToThread(parentMessageId, new ApiConnection.APIConnectionListener() {
+            @Override
+            public void onResponse(String response, final CometChatException ce) {
+                try {
+                    if (ce != null) {
+                        postOnMainThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                callbackListener.onError(ce);
+                            }
+                        });
+                    } else {
+                        final String message = ThreadParser.parseSubscriptionAck(response);
+                        postOnMainThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                callbackListener.onSuccess(message);
+                            }
+                        });
+                    }
+                } catch (Exception e) {
+                    final CometChatException uncaughtException = new CometChatException(CometChatConstants.Errors.ERROR_UNHANDLED_EXCEPTION, e.getMessage());
+                    HashMap<String, String> detailsMap = new HashMap<>();
+                    detailsMap.put("subscribeToThread", String.valueOf(parentMessageId));
+                    handleException(methodName, e, detailsMap);
+                    postOnMainThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            callbackListener.onError(uncaughtException);
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    /**
+     * Unsubscribes the logged-in user from a message thread. Idempotent. Server-side this
+     * hard-deletes the subscription, removing the thread from the user's participated-threads list;
+     * replying again or being re-mentioned re-subscribes them, so unsubscribing is not sticky — do
+     * not promise otherwise in UI copy.
+     *
+     * <p><b>The callback is the acknowledgement</b> — there is no follow-up event, and the SDK stores
+     * nothing. Because the row is hard-deleted, a consumer showing a "following" list must remove the
+     * row itself when this resolves.
+     *
+     * @param parentMessageId  the id of the thread's root (parent) message.
+     * @param callbackListener receives the server acknowledgement string, or an error.
+     */
+    public static void unsubscribeFromThread(final long parentMessageId, @NonNull final CometChat.CallbackListener<String> callbackListener) {
+        final String methodName = new Throwable()
+                .getStackTrace()[0]
+                .getMethodName();
+
+        if (parentMessageId <= 0) {
+            callbackListener.onError(new CometChatException(CometChatConstants.Errors.ERROR_INVALID_MESSAGEID, CometChatConstants.Errors.ERROR_INVALID_MESSAGEID_MESSAGE));
+            return;
+        }
+
+        ApiConnection.getInstance().unsubscribeFromThread(parentMessageId, new ApiConnection.APIConnectionListener() {
+            @Override
+            public void onResponse(String response, final CometChatException ce) {
+                try {
+                    if (ce != null) {
+                        postOnMainThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                callbackListener.onError(ce);
+                            }
+                        });
+                    } else {
+                        final String message = ThreadParser.parseSubscriptionAck(response);
+                        postOnMainThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                callbackListener.onSuccess(message);
+                            }
+                        });
+                    }
+                } catch (Exception e) {
+                    final CometChatException uncaughtException = new CometChatException(CometChatConstants.Errors.ERROR_UNHANDLED_EXCEPTION, e.getMessage());
+                    HashMap<String, String> detailsMap = new HashMap<>();
+                    detailsMap.put("unsubscribeFromThread", String.valueOf(parentMessageId));
+                    handleException(methodName, e, detailsMap);
+                    postOnMainThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            callbackListener.onError(uncaughtException);
+                        }
+                    });
+                }
+            }
+        });
+    }
 
     /**
      * {@inheritDoc}
@@ -4840,7 +5051,7 @@ public final class CometChat {
             boolean mentionsWithTagInfo,
             boolean mentionsWithBlockedInfo,
             boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes,
-            boolean hideQuotedMessages, final MessagesRequest.MessagesFetchedListener messagesFetchedListener
+            boolean hideQuotedMessages, boolean withThreadSubscribed, final MessagesRequest.MessagesFetchedListener messagesFetchedListener
     ) {
         final String methodName = new Throwable()
             .getStackTrace()[0]
@@ -4872,6 +5083,7 @@ public final class CometChat {
                             mentionedUids,
                             attachmentTypes,
                             hideQuotedMessages,
+                            withThreadSubscribed,
                             new ApiConnection.APIConnectionListener() {
                                 @Override
                                 public void onResponse(String response, final CometChatException ce) {
@@ -4938,7 +5150,7 @@ public final class CometChat {
             boolean mentionsWithTagInfo,
             boolean mentionsWithBlockedInfo,
             boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes,
-            boolean hideQuotedMessages, final MessagesRequest.MessagesFetchedListener messagesFetchedListener
+            boolean hideQuotedMessages, boolean withThreadSubscribed, final MessagesRequest.MessagesFetchedListener messagesFetchedListener
     ) {
         final String methodName = new Throwable()
             .getStackTrace()[0]
@@ -4972,6 +5184,7 @@ public final class CometChat {
                                          mentionedUids,
                                          attachmentTypes,
                                          hideQuotedMessages,
+                                         withThreadSubscribed,
                                          new ApiConnection.APIConnectionListener() {
                                              @Override
                                              public void onResponse(String response, final CometChatException ce) {
@@ -5039,7 +5252,7 @@ public final class CometChat {
             boolean mentionsWithTagInfo,
             boolean mentionsWithBlockedInfo,
             boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes,
-            boolean hideQuotedMessages, final MessagesRequest.MessagesFetchedListener messagesFetchedListener
+            boolean hideQuotedMessages, boolean withThreadSubscribed, final MessagesRequest.MessagesFetchedListener messagesFetchedListener
     ) {
         final String methodName = new Throwable()
             .getStackTrace()[0]
@@ -5072,6 +5285,7 @@ public final class CometChat {
                                    mentionedUids,
                                    attachmentTypes,
                                    hideQuotedMessages,
+                                   withThreadSubscribed,
                                    new ApiConnection.APIConnectionListener() {
                                        @Override
                                        public void onResponse(String response, final CometChatException ce) {
@@ -5136,7 +5350,7 @@ public final class CometChat {
             boolean mentionsWithTagInfo,
             boolean mentionsWithBlockedInfo,
             boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes, boolean withParent,
-            boolean hideQuotedMessages, final MessagesRequest.MessagesFetchedListener messagesFetchedListener
+            boolean hideQuotedMessages, boolean withThreadSubscribed, final MessagesRequest.MessagesFetchedListener messagesFetchedListener
     ) {
         final String methodName = new Throwable()
             .getStackTrace()[0]
@@ -5169,6 +5383,7 @@ public final class CometChat {
                                  attachmentTypes,
                                  withParent,
                                  hideQuotedMessages,
+                                 withThreadSubscribed,
                                  new ApiConnection.APIConnectionListener() {
                                      @Override
                                      public void onResponse(String response, final CometChatException ce) {
@@ -5236,7 +5451,7 @@ public final class CometChat {
             boolean mentionsWithTagInfo,
             boolean mentionsWithBlockedInfo,
             boolean hasAttachments, boolean hasLinks, boolean hasMentions, boolean hasReactions, List<String> mentionedUids, List<AttachmentType> attachmentTypes,
-            boolean hideQuotedMessages, final MessagesRequest.MessagesFetchedListener messagesFetchedListener
+            boolean hideQuotedMessages, boolean withThreadSubscribed, final MessagesRequest.MessagesFetchedListener messagesFetchedListener
     ) {
         final String methodName = new Throwable()
             .getStackTrace()[0]
@@ -5269,6 +5484,7 @@ public final class CometChat {
                                   mentionedUids,
                                   attachmentTypes,
                                   hideQuotedMessages,
+                                  withThreadSubscribed,
                                   new ApiConnection.APIConnectionListener() {
                                       @Override
                                       public void onResponse(String response, final CometChatException ce) {
@@ -6780,6 +6996,8 @@ public final class CometChat {
                                 JSONObject mainObject = new JSONObject(response);
                                 if (mainObject.has(CometChatConstants.ResponseKeys.KEY_DATA)) {
                                     JSONObject dataObject = mainObject.getJSONObject(CometChatConstants.ResponseKeys.KEY_DATA);
+                                    // getMessageDetails always requests the flag, so the returned message's
+                                    // isThreadSubscribed() is the server's answer — see ThreadParser#applyThreadAttributes.
                                     final BaseMessage receivedMessage = CometChatHelper.processMessage(dataObject);
                                     postOnMainThread(new Runnable() {
                                         @Override
@@ -9709,6 +9927,32 @@ public final class CometChat {
     }
 
     /**
+     * Registers a {@link ConversationListener} to receive real-time conversation events
+     * (Pin Conversation).
+     *
+     * @param listenerID Unique identifier for the listener
+     * @param listener   An object of the {@link ConversationListener} class
+     * @since <b>v5</b>
+     */
+    public static void addConversationListener(@NonNull String listenerID, @NonNull ConversationListener listener) {
+        if (listenerID != null && !TextUtils.isEmpty(listenerID) && listener != null) {
+            conversationListeners.put(listenerID, listener);
+        }
+    }
+
+    /**
+     * Removes a previously registered {@link ConversationListener}.
+     *
+     * @param listenerID Unique identifier used in {@link #addConversationListener(String, ConversationListener)}
+     * @since <b>v5</b>
+     */
+    public static void removeConversationListener(@NonNull String listenerID) {
+        if (!TextUtils.isEmpty(listenerID)) {
+            conversationListeners.remove(listenerID);
+        }
+    }
+
+    /**
      * {@inheritDoc}
      * To receive call events Developer needs to make use of this method
      *
@@ -10001,6 +10245,60 @@ public final class CometChat {
          * @since <b>v1</b>
          */
         public void onMessageDeleted(BaseMessage message) {
+
+        }
+
+        /**
+         * Invoked when a message is pinned in a conversation. Broadcast to all participants. Carries
+         * the full updated {@link BaseMessage} (with {@code pinnedAt}/{@code pinnedBy} set).
+         * <p>
+         * <b>Note:</b> the backend does not emit this event yet (ENG-37690 §8); this callback is
+         * inert until the realtime service is wired.
+         *
+         * @param message the pinned message
+         * @since <b>v5</b>
+         */
+        public void onMessagePinned(BaseMessage message) {
+
+        }
+
+        /**
+         * Invoked when a message is unpinned in a conversation. Broadcast to all participants.
+         * Carries the full updated {@link BaseMessage} (pin attributes cleared).
+         * <p>
+         * <b>Note:</b> inert until the realtime service is wired (ENG-37690 §8).
+         *
+         * @param message the unpinned message
+         * @since <b>v5</b>
+         */
+        public void onMessageUnpinned(BaseMessage message) {
+
+        }
+
+        /**
+         * Invoked when the current user saves a message on any of their devices. Private (delivered
+         * only to the user's own sessions). Carries the full updated {@link BaseMessage} (with
+         * {@code savedAt} set).
+         * <p>
+         * <b>Note:</b> inert until the realtime service is wired (ENG-37690 §8).
+         *
+         * @param message the saved message
+         * @since <b>v5</b>
+         */
+        public void onMessageSaved(BaseMessage message) {
+
+        }
+
+        /**
+         * Invoked when the current user unsaves a message on any of their devices. Private. Carries
+         * the full updated {@link BaseMessage} ({@code savedAt} cleared).
+         * <p>
+         * <b>Note:</b> inert until the realtime service is wired (ENG-37690 §8).
+         *
+         * @param message the unsaved message
+         * @since <b>v5</b>
+         */
+        public void onMessageUnsaved(BaseMessage message) {
 
         }
 
@@ -10320,6 +10618,41 @@ public final class CometChat {
         }
     }
 
+
+    /**
+     * Listener for real-time conversation events (Pin Conversation).
+     * <p>
+     * <b>Note:</b> the backend does not emit these events yet (ENG-37690 §8). The acting device is
+     * updated from REST success via a local emit; broadcast to the user's other devices activates
+     * once the realtime service is wired. Register with
+     * {@link CometChat#addConversationListener(String, ConversationListener)}.
+     *
+     * @since <b>v5</b>
+     */
+    public abstract static class ConversationListener {
+
+        /**
+         * Invoked when a conversation is pinned for the current user. Carries the full updated
+         * {@link Conversation} (with {@code pinnedAt}/{@code pinnedBy} set).
+         *
+         * @param conversation the pinned conversation
+         * @since <b>v5</b>
+         */
+        public void onConversationPinned(Conversation conversation) {
+
+        }
+
+        /**
+         * Invoked when a conversation is unpinned for the current user. Carries the full updated
+         * {@link Conversation} (pin attributes cleared).
+         *
+         * @param conversation the unpinned conversation
+         * @since <b>v5</b>
+         */
+        public void onConversationUnpinned(Conversation conversation) {
+
+        }
+    }
 
     public abstract static class CallListener {
 
@@ -10968,6 +11301,473 @@ public final class CometChat {
         }
     }
 
+
+    // region Pin & Save Message
+
+    /**
+     * Pins a message in its conversation. Conversation-wide and visible to everyone; the response
+     * is the full updated message carrying {@code pinnedAt}/{@code pinnedBy}.
+     *
+     * @param messageId the id of the message to pin
+     * @param listener  callback invoked with the updated {@link BaseMessage} on success, or the error
+     * @since <b>v5</b>
+     */
+    public static void pinMessage(long messageId, @NonNull final CallbackListener<BaseMessage> listener) {
+        pinSaveInternal(messageId, PinSaveAction.PIN, listener);
+    }
+
+    /**
+     * Unpins a message in its conversation. Anyone may unpin (not just the original pinner). The
+     * response is the full updated message with the pin attributes cleared.
+     *
+     * @param messageId the id of the message to unpin
+     * @param listener  callback invoked with the updated {@link BaseMessage} on success, or the error
+     * @since <b>v5</b>
+     */
+    public static void unpinMessage(long messageId, @NonNull final CallbackListener<BaseMessage> listener) {
+        pinSaveInternal(messageId, PinSaveAction.UNPIN, listener);
+    }
+
+    /**
+     * Saves a message for the current user. Per-user and private; synced across the user's devices.
+     * The response is the full updated message carrying {@code savedAt}.
+     *
+     * @param messageId the id of the message to save
+     * @param listener  callback invoked with the updated {@link BaseMessage} on success, or the error
+     * @since <b>v5</b>
+     */
+    public static void saveMessage(long messageId, @NonNull final CallbackListener<BaseMessage> listener) {
+        pinSaveInternal(messageId, PinSaveAction.SAVE, listener);
+    }
+
+    /**
+     * Unsaves a message for the current user. The response is the full updated message with
+     * {@code savedAt} cleared.
+     *
+     * @param messageId the id of the message to unsave
+     * @param listener  callback invoked with the updated {@link BaseMessage} on success, or the error
+     * @since <b>v5</b>
+     */
+    public static void unsaveMessage(long messageId, @NonNull final CallbackListener<BaseMessage> listener) {
+        pinSaveInternal(messageId, PinSaveAction.UNSAVE, listener);
+    }
+
+    private enum PinSaveAction { PIN, UNPIN, SAVE, UNSAVE }
+
+    private static String pinSaveActionKey(PinSaveAction action) {
+        switch (action) {
+            case PIN:    return CometChatConstants.ActionKeys.ACTION_MESSAGE_PINNED;
+            case UNPIN:  return CometChatConstants.ActionKeys.ACTION_MESSAGE_UNPINNED;
+            case SAVE:   return CometChatConstants.ActionKeys.ACTION_MESSAGE_SAVED;
+            default:     return CometChatConstants.ActionKeys.ACTION_MESSAGE_UNSAVED;
+        }
+    }
+
+    /**
+     * Emits a pin/save event to every registered {@link MessageListener} on the acting device.
+     * Called from REST success so the acting device updates immediately without waiting for the
+     * (private/broadcast) realtime frame. Echo registration is NOT done here — it happens in
+     * {@link #pinSaveInternal} before the write goes out, so a frame that beats the HTTP response
+     * is still recognised as this session's own echo.
+     */
+    private static void localEmitPinSave(final BaseMessage message, final String action) {
+        if (message == null) {
+            return;
+        }
+        for (Map.Entry<String, MessageListener> entry : messageListeners.entrySet()) {
+            final MessageListener listener = entry.getValue();
+            if (listener == null) {
+                continue;
+            }
+            postOnMainThread(new Runnable() {
+                @Override
+                public void run() {
+                    dispatchPinSaveCallback(listener, action, message);
+                }
+            });
+        }
+    }
+
+    /**
+     * Maps a raw action string to the canonical internal pin/save constant, or null when it is not
+     * a pin/save action. Lets callers do one case-insensitive classification up front instead of
+     * four scattered equalsIgnoreCase checks.
+     */
+    private static String normalisedPinSaveActionOrNull(String action) {
+        if (CometChatConstants.ActionKeys.ACTION_MESSAGE_PINNED.equalsIgnoreCase(action)) {
+            return CometChatConstants.ActionKeys.ACTION_MESSAGE_PINNED;
+        }
+        if (CometChatConstants.ActionKeys.ACTION_MESSAGE_UNPINNED.equalsIgnoreCase(action)) {
+            return CometChatConstants.ActionKeys.ACTION_MESSAGE_UNPINNED;
+        }
+        if (CometChatConstants.ActionKeys.ACTION_MESSAGE_SAVED.equalsIgnoreCase(action)) {
+            return CometChatConstants.ActionKeys.ACTION_MESSAGE_SAVED;
+        }
+        if (CometChatConstants.ActionKeys.ACTION_MESSAGE_UNSAVED.equalsIgnoreCase(action)) {
+            return CometChatConstants.ActionKeys.ACTION_MESSAGE_UNSAVED;
+        }
+        return null;
+    }
+
+    private static void dispatchPinSaveCallback(MessageListener listener, String action, BaseMessage message) {
+        if (CometChatConstants.ActionKeys.ACTION_MESSAGE_PINNED.equalsIgnoreCase(action)) {
+            listener.onMessagePinned(message);
+        } else if (CometChatConstants.ActionKeys.ACTION_MESSAGE_UNPINNED.equalsIgnoreCase(action)) {
+            listener.onMessageUnpinned(message);
+        } else if (CometChatConstants.ActionKeys.ACTION_MESSAGE_SAVED.equalsIgnoreCase(action)) {
+            listener.onMessageSaved(message);
+        } else if (CometChatConstants.ActionKeys.ACTION_MESSAGE_UNSAVED.equalsIgnoreCase(action)) {
+            listener.onMessageUnsaved(message);
+        }
+    }
+
+    // Self-echo suppression for pin/save lives in PinSaveEchoRegistry (register-before-write,
+    // consume-on-frame, clear-on-failure — see its class doc). These thin wrappers keep the emit
+    // and dispatch sites readable.
+
+    private static void registerPinSaveLocalEcho(long messageId, String action) {
+        PinSaveEchoRegistry.register(messageId, action);
+    }
+
+    private static void clearPinSaveLocalEcho(long messageId, String action) {
+        PinSaveEchoRegistry.clear(messageId, action);
+    }
+
+    private static boolean consumePinSaveLocalEcho(long messageId, String action) {
+        return PinSaveEchoRegistry.consume(messageId, action);
+    }
+
+    private static void pinSaveInternal(final long messageId, final PinSaveAction action, @NonNull final CallbackListener<BaseMessage> listener) {
+        if (messageId == 0) {
+            listener.onError(new CometChatException(CometChatConstants.Errors.ERROR_INVALID_MESSAGE_ID,
+                                                    CometChatConstants.Errors.ERROR_INVALID_MESSAGEID_MESSAGE));
+            return;
+        }
+        final String actionKey = pinSaveActionKey(action);
+        // Register the echo BEFORE the write goes out: the realtime frame can beat the HTTP
+        // response, and a frame arriving pre-registration would double-fire on this session.
+        // Every failure path below must clear this, or the dead entry mutes the next genuine
+        // frame for this message until the TTL expires.
+        registerPinSaveLocalEcho(messageId, actionKey);
+        ApiConnection.APIConnectionListener apiListener = new ApiConnection.APIConnectionListener() {
+            @Override
+            public void onResponse(String response, final CometChatException ce) {
+                try {
+                    if (ce != null) {
+                        clearPinSaveLocalEcho(messageId, actionKey);
+                        postOnMainThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                listener.onError(ce);
+                            }
+                        });
+                    } else {
+                        JSONObject jsonObject = new JSONObject(response);
+                        JSONObject dataObject = jsonObject.getJSONObject(CometChatConstants.ResponseKeys.KEY_DATA);
+                        final BaseMessage baseMessage = BaseMessage.processMessage(dataObject);
+                        // Self-echo: the acting device local-emits the pin/save event to the app's
+                        // MessageListeners from REST success (echo registered pre-write, consumed
+                        // by the matching realtime frame). Parity with the JS/Flutter SDKs.
+                        localEmitPinSave(baseMessage, actionKey);
+                        postOnMainThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                listener.onSuccess(baseMessage);
+                            }
+                        });
+                    }
+                } catch (Exception e) {
+                    // The write may have succeeded on the wire, but this session emitted nothing —
+                    // so an arriving frame is the only delivery left and must not be suppressed.
+                    clearPinSaveLocalEcho(messageId, actionKey);
+                    final CometChatException uncaughtException = new CometChatException(CometChatConstants.Errors.ERROR_UNHANDLED_EXCEPTION,
+                                                                                        e.getMessage());
+                    postOnMainThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            listener.onError(uncaughtException);
+                        }
+                    });
+                }
+            }
+        };
+        switch (action) {
+            case PIN:
+                ApiConnection.getInstance().pinMessage(messageId, apiListener);
+                break;
+            case UNPIN:
+                ApiConnection.getInstance().unpinMessage(messageId, apiListener);
+                break;
+            case SAVE:
+                ApiConnection.getInstance().saveMessage(messageId, apiListener);
+                break;
+            case UNSAVE:
+                ApiConnection.getInstance().unsaveMessage(messageId, apiListener);
+                break;
+        }
+    }
+
+    /**
+     * Whether the Pin Message feature is enabled for this app (reads
+     * {@code features.ux.messages.pinned.enabled} from the settings cache). Absence of the flag is
+     * treated as <b>enabled</b> (see {@link #isAppFeatureEnabled(String)}).
+     *
+     * @since <b>v5</b>
+     */
+    public static boolean isPinMessageEnabled() {
+        Settings settings = SettingsRepo.getSettings();
+        // Absence of settings (pre-init) ⇒ enabled; the typed field itself defaults to enabled when
+        // the backend does not serve the flag. Never throws (UI-safe). Parity with the other SDKs.
+        return settings == null || settings.isPinnedMessagesEnabled();
+    }
+
+    /**
+     * Whether the Save Message feature is enabled for this app
+     * ({@code features.ux.messages.saved.enabled}). Absence of the flag is treated as
+     * <b>enabled</b>.
+     *
+     * @since <b>v5</b>
+     */
+    public static boolean isSaveMessageEnabled() {
+        Settings settings = SettingsRepo.getSettings();
+        return settings == null || settings.isSavedMessagesEnabled();
+    }
+
+    /**
+     * Maximum number of messages the current user can pin in a conversation (reads
+     * {@code features.ux.messages.pinned.limit} from the settings cache). Returns
+     * {@link Settings#LIMIT_UNSPECIFIED} when the value is not served (or pre-init): the client
+     * must not invent a cap — the server enforces the limit and returns an error on breach. Never
+     * throws (UI-safe).
+     *
+     * @since <b>v5</b>
+     */
+    public static int getPinMessageLimit() {
+        Settings settings = SettingsRepo.getSettings();
+        return settings == null ? Settings.LIMIT_UNSPECIFIED : settings.getPinnedMessagesLimit();
+    }
+
+    /**
+     * Maximum number of messages an admin / system can pin in a conversation
+     * ({@code features.ux.messages.pinned.system.limit}). Returns
+     * {@link Settings#LIMIT_UNSPECIFIED} when the value is not served. Never throws.
+     *
+     * @since <b>v5</b>
+     */
+    public static int getSystemPinMessageLimit() {
+        Settings settings = SettingsRepo.getSettings();
+        return settings == null ? Settings.LIMIT_UNSPECIFIED : settings.getPinnedMessagesSystemLimit();
+    }
+
+    /**
+     * Maximum number of messages the current user can save
+     * ({@code features.ux.messages.saved.limit}). Returns {@link Settings#LIMIT_UNSPECIFIED} when
+     * the value is not served. Never throws.
+     *
+     * @since <b>v5</b>
+     */
+    public static int getSaveMessageLimit() {
+        Settings settings = SettingsRepo.getSettings();
+        return settings == null ? Settings.LIMIT_UNSPECIFIED : settings.getSavedMessagesLimit();
+    }
+
+    // endregion
+
+    // region Pin Conversation
+
+    /**
+     * Pins a conversation to the top of the current user's conversation list. Per-user (private).
+     * The response is the updated {@link Conversation} carrying {@code pinnedAt}/{@code pinnedBy}.
+     *
+     * @param conversationWith uid (for a 1-1) or guid (for a group)
+     * @param conversationType {@link CometChatConstants#CONVERSATION_TYPE_USER} or
+     *                         {@link CometChatConstants#CONVERSATION_TYPE_GROUP}
+     * @param listener         callback with the updated conversation, or the error
+     * @since <b>v5</b>
+     */
+    public static void pinConversation(@NonNull final String conversationWith,
+                                       @NonNull @CometChatConstants.ConversationTypes final String conversationType,
+                                       @NonNull final CallbackListener<Conversation> listener) {
+        pinUnpinConversationInternal(conversationWith, conversationType, true, listener);
+    }
+
+    /**
+     * Unpins a conversation for the current user. A user cannot unpin an admin / global
+     * ({@code app_system}) pin. The response is the updated {@link Conversation} with the pin
+     * attributes cleared.
+     *
+     * @param conversationWith uid (for a 1-1) or guid (for a group)
+     * @param conversationType {@link CometChatConstants#CONVERSATION_TYPE_USER} or
+     *                         {@link CometChatConstants#CONVERSATION_TYPE_GROUP}
+     * @param listener         callback with the updated conversation, or the error
+     * @since <b>v5</b>
+     */
+    public static void unpinConversation(@NonNull final String conversationWith,
+                                         @NonNull @CometChatConstants.ConversationTypes final String conversationType,
+                                         @NonNull final CallbackListener<Conversation> listener) {
+        pinUnpinConversationInternal(conversationWith, conversationType, false, listener);
+    }
+
+    private static void pinUnpinConversationInternal(final String conversationWith,
+                                                     final String conversationType,
+                                                     final boolean pin,
+                                                     final CallbackListener<Conversation> listener) {
+        if (conversationWith == null || TextUtils.isEmpty(conversationWith)) {
+            listener.onError(new CometChatException(CometChatConstants.Errors.ERROR_INVALID_CONVERSATION_WITH,
+                                                    CometChatConstants.Errors.ERROR_INVALID_CONVERSATION_WITH_MESSAGE));
+            return;
+        }
+        if (conversationType == null || TextUtils.isEmpty(conversationType)
+                || (!conversationType.equalsIgnoreCase(CometChatConstants.CONVERSATION_TYPE_USER)
+                && !conversationType.equalsIgnoreCase(CometChatConstants.CONVERSATION_TYPE_GROUP))) {
+            listener.onError(new CometChatException(CometChatConstants.Errors.ERROR_INVALID_CONVERSATION_TYPE,
+                                                    CometChatConstants.Errors.ERROR_INVALID_CONVERSATION_TYPE_MESSAGE));
+            return;
+        }
+        final String actionKey = pin ? CometChatConstants.ActionKeys.ACTION_CONVERSATION_PINNED
+            : CometChatConstants.ActionKeys.ACTION_CONVERSATION_UNPINNED;
+        final String echoKey = PinSaveEchoRegistry.conversationKey(conversationType.toLowerCase(), conversationWith);
+        // Register the echo BEFORE the write goes out (see PinSaveEchoRegistry) — keyed on
+        // (type, with) because the conversationId only arrives on the response. Every failure
+        // path below must clear it.
+        PinSaveEchoRegistry.register(echoKey, actionKey);
+        ApiConnection.APIConnectionListener apiListener = new ApiConnection.APIConnectionListener() {
+            @Override
+            public void onResponse(String response, final CometChatException ce) {
+                try {
+                    if (ce != null) {
+                        PinSaveEchoRegistry.clear(echoKey, actionKey);
+                        postOnMainThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                listener.onError(ce);
+                            }
+                        });
+                    } else {
+                        JSONObject jsonObject = new JSONObject(response);
+                        final Conversation conversation = Conversation.fromJSON(jsonObject.getJSONObject(CometChatConstants.ResponseKeys.KEY_DATA));
+                        // Self-echo: local-emit to the app's ConversationListeners on the acting
+                        // device from REST success (echo registered pre-write, consumed by the
+                        // matching realtime frame).
+                        localEmitConversationPin(conversation, pin);
+                        postOnMainThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                listener.onSuccess(conversation);
+                            }
+                        });
+                    }
+                } catch (Exception e) {
+                    // The write may have succeeded on the wire, but this session emitted nothing —
+                    // an arriving frame is the only delivery left and must not be suppressed.
+                    PinSaveEchoRegistry.clear(echoKey, actionKey);
+                    final CometChatException uncaughtException = new CometChatException(CometChatConstants.Errors.ERROR_UNHANDLED_EXCEPTION,
+                                                                                        e.getMessage());
+                    postOnMainThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            listener.onError(uncaughtException);
+                        }
+                    });
+                }
+            }
+        };
+        if (pin) {
+            ApiConnection.getInstance().pinConversation(conversationWith, conversationType, apiListener);
+        } else {
+            ApiConnection.getInstance().unpinConversation(conversationWith, conversationType, apiListener);
+        }
+    }
+
+    /**
+     * Whether the Pin Conversation feature is enabled for this app
+     * ({@code features.ux.conversations.pinned.enabled}). Absence of the flag is treated as
+     * <b>enabled</b>. Never throws.
+     *
+     * @since <b>v5</b>
+     */
+    public static boolean isPinConversationEnabled() {
+        Settings settings = SettingsRepo.getSettings();
+        return settings == null || settings.isConversationPinnedEnabled();
+    }
+
+    /**
+     * Maximum number of conversations the current user can pin
+     * ({@code features.ux.conversations.pinned.limit}). Returns
+     * {@link Settings#LIMIT_UNSPECIFIED} when the value is not served (or pre-init): the client
+     * must not invent a cap — the server enforces the limit and returns an error on breach. Never
+     * throws (UI-safe).
+     *
+     * @since <b>v5</b>
+     */
+    public static int getPinConversationLimit() {
+        Settings settings = SettingsRepo.getSettings();
+        return settings == null ? Settings.LIMIT_UNSPECIFIED : settings.getConversationPinnedLimit();
+    }
+
+    /**
+     * Maximum number of conversations an admin / system can pin
+     * ({@code features.ux.conversations.pinned.system.limit}). Returns
+     * {@link Settings#LIMIT_UNSPECIFIED} when the value is not served. Never throws.
+     *
+     * @since <b>v5</b>
+     */
+    public static int getSystemPinConversationLimit() {
+        Settings settings = SettingsRepo.getSettings();
+        return settings == null ? Settings.LIMIT_UNSPECIFIED : settings.getConversationPinnedSystemLimit();
+    }
+
+    /**
+     * Emits a conversation pin/unpin event to every registered {@link ConversationListener} on the
+     * acting device. Called from REST success so the acting device updates immediately. (Broadcast
+     * to the user's other devices is delivered by the realtime service, which is not wired yet —
+     * ENG-37690 §8.)
+     */
+    /**
+     * The echo key for a parsed conversation — the same (type, with) identity the write side
+     * registered under. Null when the conversation can't yield one (caller then delivers rather
+     * than suppresses).
+     */
+    private static String conversationEchoKeyFrom(Conversation conversation) {
+        if (conversation == null || conversation.getConversationType() == null) {
+            return null;
+        }
+        Object with = conversation.getConversationWith();
+        String id = null;
+        if (with instanceof User) {
+            id = ((User) with).getUid();
+        } else if (with instanceof Group) {
+            id = ((Group) with).getGuid();
+        }
+        if (id == null || id.isEmpty()) {
+            return null;
+        }
+        return PinSaveEchoRegistry.conversationKey(conversation.getConversationType().toLowerCase(), id);
+    }
+
+    private static void localEmitConversationPin(final Conversation conversation, final boolean pinned) {
+        if (conversation == null) {
+            return;
+        }
+        for (Map.Entry<String, ConversationListener> entry : conversationListeners.entrySet()) {
+            final ConversationListener listener = entry.getValue();
+            if (listener == null) {
+                continue;
+            }
+            postOnMainThread(new Runnable() {
+                @Override
+                public void run() {
+                    if (pinned) {
+                        listener.onConversationPinned(conversation);
+                    } else {
+                        listener.onConversationUnpinned(conversation);
+                    }
+                }
+            });
+        }
+    }
+
+    // endregion
 
     /**
      * Retrieves the ConversationUpdateSettings.

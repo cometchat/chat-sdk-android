@@ -33,6 +33,10 @@ public class CometChatConstants {
         public static final String KEY_DIRECTION = "direction";
         public static final String KEY_UNDELIVERED = "undelivered";
         public static final String KEY_UNREAD = "unread";
+        // Pinned/saved message list query params (value "1").
+        public static final String KEY_PINNED = "pinned";
+        public static final String KEY_SAVED = "saved";
+        public static final String KEY_FLAG_ON = "1";
         public static final String KEY_COUNT = "count";
         public static final String KEY_HIDE_MESSAGES_FROM_BLOCKED_USERS = "hideMessagesFromBlockedUsers";
         public static final String KEY_UPDATED_AT = "updatedAt";
@@ -383,6 +387,14 @@ public class CometChatConstants {
         public static final String KEY_MESSAGE_DELETED_AT = "deletedAt";
         public static final String KEY_MESSAGE_DELETED_BY = "deletedBy";
         public static final String KEY_MESSAGE_EDITED_BY = "editedBy";
+        // Pin & Save message attributes. Present-only-when-set on the wire; the SINGLE parse
+        // chokepoint that reads them is BaseMessage#applyPinSaveAttributes — do not read these
+        // keys anywhere else (PIN_SAVE_CONTRACT).
+        public static final String KEY_MESSAGE_PINNED_AT = "pinnedAt";
+        public static final String KEY_MESSAGE_PINNED_BY = "pinnedBy";
+        public static final String KEY_MESSAGE_SAVED_AT = "savedAt";
+        // pinnedBy sentinel for an admin / global (system) pin.
+        public static final String PINNED_BY_SYSTEM = "app_system";
         public static final String KEY_MESSAGE_CATEGORY = "category";
         public static final String KEY_MESSAGE_ATTACHMENTS = "attachments";
         public static final String KEY_ATTACHMENT_NAME = "name";
@@ -458,6 +470,8 @@ public class CometChatConstants {
         public static final String KEY_AGENTIC_ELEMENT_TYPE = "type";
         public static final String KEY_AGENTIC_ELEMENT_VALUE = "value";
         public static final String KEY_WITH_PARENT = "withParent";
+        // Opt in to receive each message's thread subscription state on the fetch response.
+        public static final String KEY_WITH_THREAD_SUBSCRIBED = "withThreadSubscribed";
 
         // Swipe to reply
         public static final String KEY_HIDE_QUOTED_MESSAGES = "hideQuotedMessage";
@@ -717,6 +731,12 @@ public class CometChatConstants {
         public static final String KEY_PAGINATION_ID = "id";
     }
 
+    /** Query-param keys for the participated-threads list request. */
+    public static final class ThreadKeys {
+        public static final String KEY_PARTICIPATED_BY_ME = "participatedByMe";
+        public static final String KEY_UPDATED_AT = "updatedAt";
+    }
+
     public static final class ActionKeys {
         public static final String KEY_BY = "by";
         public static final String KEY_ON = "on";
@@ -743,6 +763,18 @@ public class CometChatConstants {
         public static final String ACTION_SCOPE_CHANGED = "scopeChanged";
         public static final String ACTION_MESSAGE_EDITED = "edited";
         public static final String ACTION_MESSAGE_DELETED = "deleted";
+        // Realtime pin/save action strings. NOTE: the backend has not wired these events yet
+        // (ENG-37690 §8); the wire names are assumed to follow the edited/deleted convention and
+        // are isolated here so a rename is a single edit once the contract is locked.
+        public static final String ACTION_MESSAGE_PINNED = "pinned";
+        public static final String ACTION_MESSAGE_UNPINNED = "unpinned";
+        public static final String ACTION_MESSAGE_SAVED = "saved";
+        public static final String ACTION_MESSAGE_UNSAVED = "unsaved";
+        // Internal normalised conversation-pin actions (JS-parity naming). Deliberately NOT the
+        // bare words: the message family owns "pinned"/"unpinned", and collapsing the two would
+        // let a conversation payload be dispatched where a BaseMessage is expected.
+        public static final String ACTION_CONVERSATION_PINNED = "conversationPinned";
+        public static final String ACTION_CONVERSATION_UNPINNED = "conversationUnpinned";
         public static final String ACTION_MEMBER_ADDED = "added";
 
         public static final String ACTION_TYPE_USER = "user";
@@ -894,6 +926,17 @@ public class CometChatConstants {
         public static final String KEY_REACTION = "reaction";
         public static final String KEY_MODERATION_CHANGED = "on_moderation_status_changed";
 
+        // Pin/Save realtime frames (ENG-37690 §8). The pin `type` + `body.action` strings are
+        // confirmed by a live capture (type "message_pin", body.action "message_unpinned");
+        // the save and conversation-pin strings follow the same scheme but are UNCONFIRMED —
+        // the resolvers therefore accept an alias set (see CometChatPinSaveEvent /
+        // CometChatConversationPinEvent) and normalise before dispatch, mirroring the JS SDK.
+        public static final String KEY_TYPE_MESSAGE_PIN = "message_pin";
+        public static final String KEY_TYPE_MESSAGE_SAVE = "message_save";
+        public static final String KEY_TYPE_CONVERSATION_PIN = "conversation_pin";
+        public static final String KEY_MESSAGE = "message";
+        public static final String KEY_CONVERSATION = "conversation";
+
         public static final String KEY_AI_ASSISTANT_BASE_EVENT_TYPE = "type";
         public static final String KEY_AI_ASSISTANT_BASE_EVENT_CONVERSATION_ID = "conversationId";
         public static final String KEY_AI_ASSISTANT_BASE_EVENT_ID = "id";
@@ -968,6 +1011,15 @@ public class CometChatConstants {
         public static final String KEY_INCLUDE_BLOCKED_USERS = "includeBlockedUsers";
         public static final String KEY_WITH_BLOCKED_INFO = "withBlockedInfo";
         public static final String KEY_LATEST_MESSAGE_ID = "latestMessageId";
+        // Pin Conversation attributes. Present-only-when-set; absence ⇒ not pinned. pinnedBy is the
+        // pinner uid ("me") or "app_system" for an admin/global pin. Read only in
+        // Conversation#applyPinAttributes (single parse site).
+        public static final String KEY_CONVERSATION_PINNED_AT = "pinnedAt";
+        public static final String KEY_CONVERSATION_PINNED_BY = "pinnedBy";
+        // `?pinnedBy=` list-filter tokens (comma-separated). NOTE: these are the FILTER values,
+        // distinct from the field value "app_system" that a system pin carries.
+        public static final String PINNED_BY_FILTER_SYSTEM = "system";
+        public static final String PINNED_BY_FILTER_ME = "me";
     }
 
     public static final class SdkIdentificationKeys {
@@ -1022,6 +1074,20 @@ public class CometChatConstants {
 
         public static final String KEY_CONVERSATION_SUMMARY = "conversation-summary";
         public static final String KEY_AI_BOT_REPLY = "bot-reply";
+    }
+
+    /**
+     * Feature-flag keys read from the app settings ({@code parameters}) cache.
+     */
+    public static final class FeatureKeys {
+        public static final String FEATURE_PIN_MESSAGE = "features.ux.messages.pinned.enabled";
+        public static final String FEATURE_SAVE_MESSAGE = "features.ux.messages.saved.enabled";
+        public static final String FEATURE_PIN_CONVERSATION = "features.ux.conversations.pinned.enabled";
+        public static final String FEATURE_PIN_MESSAGE_LIMIT = "features.ux.messages.pinned.limit";
+        public static final String FEATURE_PIN_MESSAGE_SYSTEM_LIMIT = "features.ux.messages.pinned.system.limit";
+        public static final String FEATURE_SAVE_MESSAGE_LIMIT = "features.ux.messages.saved.limit";
+        public static final String FEATURE_PIN_CONVERSATION_LIMIT = "features.ux.conversations.pinned.limit";
+        public static final String FEATURE_PIN_CONVERSATION_SYSTEM_LIMIT = "features.ux.conversations.pinned.system.limit";
     }
 
     public static final class PubSubKeys {

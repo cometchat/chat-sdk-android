@@ -124,11 +124,18 @@ public class DaySchedule implements Parcelable, Cloneable {
         return map;
     }
 
+    /**
+     * Builds a day schedule from a wire map. A key that is absent, or present with a {@code null}
+     * value, falls back to that field's default. A null map yields the default schedule.
+     */
     public static DaySchedule fromMap(Map<String, Object> map) {
         DaySchedule daySchedule = new DaySchedule();
-        daySchedule.setFrom(map.containsKey(CometChatNotificationsConstants.DayScheduleKeys.KEY_FROM) ? (int) map.get(CometChatNotificationsConstants.DayScheduleKeys.KEY_FROM) : 0);
-        daySchedule.setTo(map.containsKey(CometChatNotificationsConstants.DayScheduleKeys.KEY_TO) ? (int) map.get(CometChatNotificationsConstants.DayScheduleKeys.KEY_TO) : 0);
-        daySchedule.setDnd(map.containsKey(CometChatNotificationsConstants.DayScheduleKeys.KEY_DND) ? (boolean) map.get(CometChatNotificationsConstants.DayScheduleKeys.KEY_DND) : false);
+        Object from = PreferenceMaps.opt(map, CometChatNotificationsConstants.DayScheduleKeys.KEY_FROM);
+        daySchedule.setFrom(from != null ? (int) from : 0);
+        Object to = PreferenceMaps.opt(map, CometChatNotificationsConstants.DayScheduleKeys.KEY_TO);
+        daySchedule.setTo(to != null ? (int) to : 0);
+        Object dnd = PreferenceMaps.opt(map, CometChatNotificationsConstants.DayScheduleKeys.KEY_DND);
+        daySchedule.setDnd(dnd != null ? (boolean) dnd : false);
         return daySchedule;
     }
 

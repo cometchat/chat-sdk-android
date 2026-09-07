@@ -373,6 +373,9 @@ public class MediaMessage extends BaseMessage {
                 mediaMessage.setDeletedAt(jsonObject.getLong(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_AT));
             if (jsonObject.has(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_BY))
                 mediaMessage.setDeletedBy(jsonObject.getString(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_BY));
+            // Pin & Save attributes — single parse chokepoint (PIN_SAVE_CONTRACT).
+            BaseMessage.applyPinSaveAttributes(mediaMessage, jsonObject);
+            com.cometchat.chat.utils.ThreadParser.applyThreadAttributes(mediaMessage, jsonObject);
             if (jsonObject.has(CometChatConstants.MessageKeys.KEY_SENT_AT))
                 mediaMessage.setSentAt(jsonObject.getLong(CometChatConstants.MessageKeys.KEY_SENT_AT));
             if (jsonObject.has(CometChatConstants.ResponseKeys.KEY_DATA)) {

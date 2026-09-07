@@ -202,6 +202,9 @@ public class AIToolResultMessage extends BaseMessage {
                 aiToolResultMessage.setDeletedAt(jsonObject.getLong(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_AT));
             if (jsonObject.has(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_BY))
                 aiToolResultMessage.setDeletedBy(jsonObject.getString(CometChatConstants.MessageKeys.KEY_MESSAGE_DELETED_BY));
+            // Pin & Save attributes — single parse chokepoint (PIN_SAVE_CONTRACT).
+            BaseMessage.applyPinSaveAttributes(aiToolResultMessage, jsonObject);
+            com.cometchat.chat.utils.ThreadParser.applyThreadAttributes(aiToolResultMessage, jsonObject);
 
             if (jsonObject.has(CometChatConstants.ResponseKeys.KEY_DATA)) {
                 JSONObject dataObject = jsonObject.getJSONObject(CometChatConstants.ResponseKeys.KEY_DATA);

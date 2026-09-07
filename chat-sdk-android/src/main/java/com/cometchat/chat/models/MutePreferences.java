@@ -170,16 +170,35 @@ public class MutePreferences implements Parcelable, Cloneable {
         return map;
     }
 
+    /**
+     * Builds mute preferences from a wire map. A key that is absent, or present with a {@code null}
+     * value, leaves that preference unset. A day whose schedule is null decodes to the closed
+     * default rather than throwing.
+     *
+     * <p>Dropping a day whose name is not recognised is behaviour of <b>this factory only</b> — it
+     * is not a property of the class. {@link #fromJson(JSONObject)} and the {@link Parcel}
+     * constructor still store such a day under the {@code null} key that
+     * {@link DayOfWeek#get(String)} returns for an unknown name. That difference is known and
+     * tracked separately; do not read this paragraph as describing the other two decode paths.
+     */
     public static MutePreferences fromMap(Map<String, Object> map) {
         MutePreferences mutePreferences = new MutePreferences();
-        if (map.containsKey(CometChatNotificationsConstants.MutePreferencesKeys.KEY_DND)){
-            mutePreferences.setDNDPreference(DNDOptions.get((int) map.get(CometChatNotificationsConstants.MutePreferencesKeys.KEY_DND)));
+        Object dnd = PreferenceMaps.opt(map, CometChatNotificationsConstants.MutePreferencesKeys.KEY_DND);
+        if (dnd != null){
+            mutePreferences.setDNDPreference(DNDOptions.get((int) dnd));
         }
-        if (map.containsKey(CometChatNotificationsConstants.MutePreferencesKeys.KEY_SCHEDULE)) {
-            Map<String, Object> scheduleMap = (Map<String, Object>) map.get(CometChatNotificationsConstants.MutePreferencesKeys.KEY_SCHEDULE);
+        Object scheduleValue = PreferenceMaps.opt(map, CometChatNotificationsConstants.MutePreferencesKeys.KEY_SCHEDULE);
+        if (scheduleValue != null) {
+            Map<String, Object> scheduleMap = (Map<String, Object>) scheduleValue;
             Map<DayOfWeek, DaySchedule> dayScheduleMap = new HashMap<>();
             for (Map.Entry<String, Object> entry : scheduleMap.entrySet()) {
                 DayOfWeek day = DayOfWeek.get(entry.getKey());
+                if (day == null) {
+                    // An unrecognised day name has no usable key. Storing it as null would throw out
+                    // of toMap()/writeToParcel() later, far from the payload that caused it.
+                    Logger.error("MutePreferences: dropping unrecognised day name " + entry.getKey());
+                    continue;
+                }
                 DaySchedule daySchedule = DaySchedule.fromMap((Map<String, Object>) entry.getValue());
                 dayScheduleMap.put(day, daySchedule);
             }

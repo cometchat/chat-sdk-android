@@ -8,6 +8,7 @@ import com.cometchat.chat.exceptions.CometChatException;
 import com.cometchat.chat.helpers.Logger;
 import com.cometchat.chat.models.BaseMessage;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -62,6 +63,16 @@ public class MessagesRequest {
     private List<AttachmentType> attachmentTypes;
     private boolean withParent = false;
     private boolean hideQuotedMessages = false;
+    /** Defaults to {@code true} — see {@link MessagesRequestBuilder#withThreadSubscribed(boolean)}. */
+    private boolean withThreadSubscribed = true;
+    private boolean pinned = false;
+    private boolean saved = false;
+
+    // Opaque server cursor state for the pinned/saved lists. These lists sort by pinnedAt/savedAt
+    // DESC, which no id/sentAt cursor reproduces, so the server-provided pagination id is echoed
+    // back verbatim and the boundary row is de-duplicated across pages.
+    private String pinnedSavedCursorId;
+    private long lastReturnedPinnedSavedId = -1;
 
     private MessagesRequest(MessagesRequest.MessagesRequestBuilder builder) {
         this.limit = builder.limit;
@@ -104,6 +115,9 @@ public class MessagesRequest {
         this.mentionedUIDs = builder.mentionedUIDs;
         this.withParent = builder.withParent;
         this.hideQuotedMessages = builder.hideQuotedMessages;
+        this.withThreadSubscribed = builder.withThreadSubscribed;
+        this.pinned = builder.pinned;
+        this.saved = builder.saved;
     }
 
     /**
@@ -117,6 +131,12 @@ public class MessagesRequest {
      */
     public void fetchPrevious(final CometChat.CallbackListener<List<BaseMessage>> listener) {
         this.affix = CometChatConstants.AFFIX_PREPEND;
+        // The pinned/saved lists sort by pinnedAt/savedAt and paginate forward-only via an opaque
+        // server cursor, so backward pagination is routed through the same fetch-next path.
+        if (pinned || saved) {
+            fetchPinnedSavedMessages(listener);
+            return;
+        }
         final CometChatException ce = validateMessageRequest();
         if (ce == null) {
             if (this.updatesOnly && this.updatedAfter == -1) {
@@ -159,6 +179,10 @@ public class MessagesRequest {
      */
     public void fetchNext(final CometChat.CallbackListener<List<BaseMessage>> listener) {
         this.affix = CometChatConstants.AFFIX_APPEND;
+        if (pinned || saved) {
+            fetchPinnedSavedMessages(listener);
+            return;
+        }
         final CometChatException ce = validateMessageRequest();
         if (ce == null) {
             if (messageId == -1 && timestamp == -1 && updatedAfter == -1) {
@@ -198,7 +222,7 @@ public class MessagesRequest {
             if (!inProgress) {
                 inProgress = true;
                 CometChat.getThreadedMessages(this.parentMessageId, this.limit, affix, timestamp, messageId, unread, hideMessagesFromBlockedUsers, searchKeyword, updatedAfter, updatesOnly, categories, types, hideDeleted, tags, withTags, interactionGoalCompletedOnly, mentionsWithTagInfo, mentionsWithBlockedInfo, hasAttachments, hasLinks, hasMentions, hasReactions,
-                                              mentionedUIDs, attachmentTypes, withParent, hideQuotedMessages, new MessagesFetchedListener() {
+                                              mentionedUIDs, attachmentTypes, withParent, hideQuotedMessages, withThreadSubscribed, new MessagesFetchedListener() {
                     @Override
                     public void onMessagesFetched(List<BaseMessage> baseMessage, String response, CometChatException e) {
                         handleResponse(baseMessage, response, e, listener);
@@ -220,7 +244,7 @@ public class MessagesRequest {
             if (!inProgress) {
                 inProgress = true;
                 CometChat.getUserConversations(UID, limit, affix, timestamp, messageId, unread, hideMessagesFromBlockedUsers, searchKeyword, updatedAfter, updatesOnly, categories, types, hideReplies, hideDeleted, tags, withTags, interactionGoalCompletedOnly, mentionsWithTagInfo, mentionsWithBlockedInfo, hasAttachments, hasLinks, hasMentions, hasReactions,
-                                               mentionedUIDs, attachmentTypes, hideQuotedMessages, new MessagesFetchedListener() {
+                                               mentionedUIDs, attachmentTypes, hideQuotedMessages, withThreadSubscribed, new MessagesFetchedListener() {
                     @Override
                     public void onMessagesFetched(List<BaseMessage> baseMessage, String response, CometChatException e) {
                         handleResponse(baseMessage, response, e, listener);
@@ -240,7 +264,7 @@ public class MessagesRequest {
             if (!inProgress) {
                 inProgress = true;
                 CometChat.getGroupConversations(GUID, limit, affix, timestamp, messageId, unread, hideMessagesFromBlockedUsers, searchKeyword, updatedAfter, updatesOnly, categories, types, hideReplies, hideDeleted, tags, withTags, interactionGoalCompletedOnly, mentionsWithTagInfo, mentionsWithBlockedInfo, hasAttachments, hasLinks, hasMentions, hasReactions,
-                                                mentionedUIDs, attachmentTypes, hideQuotedMessages, new MessagesFetchedListener() {
+                                                mentionedUIDs, attachmentTypes, hideQuotedMessages, withThreadSubscribed, new MessagesFetchedListener() {
                     @Override
                     public void onMessagesFetched(List<BaseMessage> baseMessage, String response, CometChatException e) {
                         handleResponse(baseMessage, response, e, listener);
@@ -259,7 +283,7 @@ public class MessagesRequest {
             if (!inProgress) {
                 inProgress = true;
                 CometChat.getUserConversationsInGroup(UID, GUID, limit, affix, timestamp, messageId, unread, hideMessagesFromBlockedUsers, searchKeyword, updatedAfter, updatesOnly, categories, types, hideReplies, hideDeleted, tags, withTags, interactionGoalCompletedOnly, mentionsWithTagInfo, mentionsWithBlockedInfo, hasAttachments, hasLinks, hasMentions, hasReactions,
-                                                      mentionedUIDs, attachmentTypes, hideQuotedMessages, new MessagesFetchedListener() {
+                                                      mentionedUIDs, attachmentTypes, hideQuotedMessages, withThreadSubscribed, new MessagesFetchedListener() {
                     @Override
                     public void onMessagesFetched(List<BaseMessage> baseMessage, String response, CometChatException e) {
                         handleResponse(baseMessage, response, e, listener);
@@ -280,7 +304,7 @@ public class MessagesRequest {
             if (!inProgress) {
                 inProgress = true;
                 CometChat.getAllMessages(limit, affix, timestamp, messageId, unread, hideMessagesFromBlockedUsers, searchKeyword, updatedAfter, updatesOnly, categories, types, hideReplies, hideDeleted, tags, withTags, interactionGoalCompletedOnly, mentionsWithTagInfo, mentionsWithBlockedInfo, hasAttachments, hasLinks, hasMentions, hasReactions,
-                                         mentionedUIDs, attachmentTypes, hideQuotedMessages, new MessagesFetchedListener() {
+                                         mentionedUIDs, attachmentTypes, hideQuotedMessages, withThreadSubscribed, new MessagesFetchedListener() {
                     @Override
                     public void onMessagesFetched(List<BaseMessage> baseMessage, String response, CometChatException e) {
                         handleResponse(baseMessage, response, e, listener);
@@ -295,6 +319,111 @@ public class MessagesRequest {
         }
     }
 
+
+    /**
+     * Fetches the next page of pinned or saved messages, depending on which flag the builder set.
+     * Both lists share one opaque server cursor and are paginated by calling this repeatedly on the
+     * same instance until an empty page is returned.
+     */
+    private void fetchPinnedSavedMessages(final CometChat.CallbackListener<List<BaseMessage>> listener) {
+        final CometChatException ce = validatePinnedSavedRequest();
+        if (ce != null) {
+            returnError(ce, listener);
+            return;
+        }
+        if (inProgress) {
+            returnError(new CometChatException(CometChatConstants.Errors.ERROR_REQUEST_IN_PROGRESS, CometChatConstants.Errors.ERROR_REQUEST_IN_PROGRESS_MESSAGE), listener);
+            return;
+        }
+        if (!hasNext) {
+            returnMessageList(new ArrayList<BaseMessage>(), listener);
+            return;
+        }
+        inProgress = true;
+        ApiConnection.APIConnectionListener apiListener = new ApiConnection.APIConnectionListener() {
+            @Override
+            public void onResponse(String response, final CometChatException ce) {
+                inProgress = false;
+                if (ce != null) {
+                    returnError(ce, listener);
+                } else {
+                    handlePinnedSavedResponse(response, listener);
+                }
+            }
+        };
+        if (pinned) {
+            ApiConnection.getInstance().getPinnedMessages(limit, UID, GUID, CometChatConstants.AFFIX_APPEND, pinnedSavedCursorId, apiListener);
+        } else {
+            ApiConnection.getInstance().getSavedMessages(limit, CometChatConstants.AFFIX_APPEND, pinnedSavedCursorId, apiListener);
+        }
+    }
+
+    private void handlePinnedSavedResponse(String response, final CometChat.CallbackListener<List<BaseMessage>> listener) {
+        try {
+            JSONObject jsonObject = new JSONObject(response);
+            updatePinnedSavedCursor(jsonObject);
+            final List<BaseMessage> messages = parsePinnedSavedMessages(jsonObject);
+            returnMessageList(messages, listener);
+        } catch (final Exception e) {
+            returnError(new CometChatException(CometChatConstants.Errors.ERROR_UNHANDLED_EXCEPTION, e.toString()), listener);
+        }
+    }
+
+    private List<BaseMessage> parsePinnedSavedMessages(JSONObject jsonObject) throws Exception {
+        List<BaseMessage> messages = new ArrayList<>();
+        if (!jsonObject.has(CometChatConstants.ResponseKeys.KEY_DATA)) {
+            return messages;
+        }
+        JSONArray dataArray = jsonObject.getJSONArray(CometChatConstants.ResponseKeys.KEY_DATA);
+        for (int i = 0; i < dataArray.length(); i++) {
+            BaseMessage baseMessage = BaseMessage.processMessage(dataArray.getJSONObject(i));
+            if (baseMessage == null) {
+                continue;
+            }
+            // De-dupe the boundary row that the opaque cursor can re-return between pages.
+            if (baseMessage.getId() == lastReturnedPinnedSavedId) {
+                continue;
+            }
+            messages.add(baseMessage);
+        }
+        if (!messages.isEmpty()) {
+            lastReturnedPinnedSavedId = messages.get(messages.size() - 1).getId();
+        }
+        return messages;
+    }
+
+    private void updatePinnedSavedCursor(JSONObject jsonObject) {
+        try {
+            if (jsonObject.has(CometChatConstants.PaginationKeys.KEY_META)) {
+                JSONObject meta = jsonObject.getJSONObject(CometChatConstants.PaginationKeys.KEY_META);
+                if (meta.has(CometChatConstants.PaginationKeys.KEY_PAGINATION_NEXT)
+                        && !meta.isNull(CometChatConstants.PaginationKeys.KEY_PAGINATION_NEXT)) {
+                    JSONObject next = meta.getJSONObject(CometChatConstants.PaginationKeys.KEY_PAGINATION_NEXT);
+                    if (next.has(CometChatConstants.PaginationKeys.KEY_PAGINATION_ID)) {
+                        pinnedSavedCursorId = next.getString(CometChatConstants.PaginationKeys.KEY_PAGINATION_ID);
+                        hasNext = true;
+                        return;
+                    }
+                }
+            }
+            hasNext = false;
+        } catch (Exception e) {
+            hasNext = false;
+        }
+    }
+
+    private CometChatException validatePinnedSavedRequest() {
+        if (limit <= 0) {
+            return new CometChatException(CometChatConstants.Errors.ERROR_NON_POSITIVE_LIMIT, CometChatConstants.Errors.ERROR_LIMIT_EXCEEDED_MESSAGE);
+        }
+        if (limit > MAX_LIMIT) {
+            return new CometChatException(CometChatConstants.Errors.ERROR_LIMIT_EXCEEDED, CometChatConstants.Errors.ERROR_LIMIT_EXCEEDED_MESSAGE);
+        }
+        if (pinned && UID == null && GUID == null) {
+            return new CometChatException(CometChatConstants.Errors.ERROR_INVALID_UID, "Either a UID or a GUID must be set to fetch pinned messages.");
+        }
+        return null;
+    }
 
     private void handleResponse(List<BaseMessage> baseMessages, String response, final CometChatException ce, final CometChat.CallbackListener<List<BaseMessage>> listener) {
         if (ce != null) {
@@ -742,6 +871,17 @@ public class MessagesRequest {
     }
 
     /**
+     * Gets the flag indicating whether each message's thread subscription state is requested on the
+     * fetch response. Defaults to {@code true} — see
+     * {@link MessagesRequestBuilder#withThreadSubscribed(boolean)}.
+     *
+     * @return {@code true} if the subscription state should ride the message payloads, {@code false} otherwise.
+     */
+    public boolean isWithThreadSubscribed() {
+        return withThreadSubscribed;
+    }
+
+    /**
      * Gets the list of mentioned user IDs for which the messages are to be fetched.
      *
      * @return The list of mentioned user IDs as a {@code List<String>}.
@@ -784,6 +924,9 @@ public class MessagesRequest {
         private List<AttachmentType> attachmentTypes;
         private boolean withParent = false;
         private boolean hideQuotedMessages = false;
+        private boolean withThreadSubscribed = true;
+        private boolean pinned = false;
+        private boolean saved = false;
 
         public MessagesRequestBuilder() {
 
@@ -1176,6 +1319,53 @@ public class MessagesRequest {
          */
         public MessagesRequestBuilder hideQuotedMessages(boolean hideQuotedMessages) {
             this.hideQuotedMessages = hideQuotedMessages;
+            return this;
+        }
+
+        /**
+         * Opts in to receive each fetched message's thread subscription state, so a thread opened
+         * from this request can render its subscribe toggle without an extra round-trip.
+         *
+         * <p><b>Defaults to {@code true}, and you almost certainly want to leave it there.</b> The
+         * server only populates {@code threadSubscribed} on responses to requests that asked for it,
+         * and the SDK caches nothing — so on an opted-out fetch
+         * {@link com.cometchat.chat.models.BaseMessage#isThreadSubscribed()} reads {@code false} for
+         * every message, indistinguishable from a genuine unsubscribe. Passing {@code false} here
+         * trades that signal away for a marginally smaller response.
+         *
+         * @param withThreadSubscribed whether to request the thread subscription state per message.
+         * @return The instance of MessagesRequestBuilder.
+         */
+        public MessagesRequestBuilder withThreadSubscribed(boolean withThreadSubscribed) {
+            this.withThreadSubscribed = withThreadSubscribed;
+            return this;
+        }
+
+        /**
+         * Fetches the pinned messages of a conversation, newest pin first ({@code pinnedAt DESC}).
+         * Scope the request with {@link #setUID(String)} (1-1) or {@link #setGUID(String)} (group).
+         * Pinned messages are conversation-wide and visible to everyone in the conversation.
+         *
+         * @param pinned whether to fetch pinned messages instead of the regular conversation list.
+         * @return The instance of MessagesRequestBuilder.
+         * @since <b>v5</b>
+         */
+        public MessagesRequestBuilder setPinned(boolean pinned) {
+            this.pinned = pinned;
+            return this;
+        }
+
+        /**
+         * Fetches the current user's saved (bookmarked) messages across all conversations, newest
+         * save first ({@code savedAt DESC}). Saved messages are private to the requesting user and
+         * are not scoped to a UID/GUID.
+         *
+         * @param saved whether to fetch saved messages instead of the regular conversation list.
+         * @return The instance of MessagesRequestBuilder.
+         * @since <b>v5</b>
+         */
+        public MessagesRequestBuilder setSaved(boolean saved) {
+            this.saved = saved;
             return this;
         }
 

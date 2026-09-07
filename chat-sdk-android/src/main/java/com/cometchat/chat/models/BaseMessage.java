@@ -61,6 +61,20 @@ public class BaseMessage extends AppEntity {
     protected JSONObject rawMessage;
     protected List<ReactionCount> reactions = new ArrayList<>();
 
+    // Pin & Save attributes. Present-only-when-set on the wire (absent ⇒ not pinned/saved, never 0
+    // as an error). Populated exclusively through the single parse chokepoint
+    // #applyPinSaveAttributes(BaseMessage, JSONObject). pinnedAt/pinnedBy are conversation-global;
+    // savedAt is per-viewer (only present in the acting user's context).
+    protected long pinnedAt;
+    protected String pinnedBy;
+    protected long savedAt;
+
+    // Thread subscription. Per-viewer, and served ONLY on responses to requests that asked for it
+    // (withThreadSubscribed=true) — a socket-delivered message carries no flag and so reads false.
+    // false therefore means "the server did not tell me", not "the user is unsubscribed". Populated
+    // exclusively through the single parse chokepoint ThreadParser#applyThreadAttributes.
+    protected boolean threadSubscribed;
+
     protected int unreadRepliesCount = 0;
 
     public BaseMessage(String receiverUid, String type, @CometChatConstants.ReceiverTypes String receiverType) {
@@ -116,6 +130,10 @@ public class BaseMessage extends AppEntity {
         }
         reactions = in.createTypedArrayList(ReactionCount.CREATOR);
         unreadRepliesCount = in.readInt();
+        pinnedAt = in.readLong();
+        pinnedBy = in.readString();
+        savedAt = in.readLong();
+        threadSubscribed = in.readByte() != 0;
         // Read receiver based on receiverType
         if (CometChatConstants.RECEIVER_TYPE_USER.equals(receiverType)) {
             receiver = in.readParcelable(User.class.getClassLoader());
@@ -154,6 +172,10 @@ public class BaseMessage extends AppEntity {
         dest.writeString(rawMessage != null ? rawMessage.toString() : null);
         dest.writeTypedList(reactions);
         dest.writeInt(unreadRepliesCount);
+        dest.writeLong(pinnedAt);
+        dest.writeString(pinnedBy);
+        dest.writeLong(savedAt);
+        dest.writeByte((byte) (threadSubscribed ? 1 : 0));
         // Write receiver based on type
         if (receiver instanceof User) {
             dest.writeParcelable((User) receiver, flags);
@@ -631,6 +653,153 @@ public class BaseMessage extends AppEntity {
     }
 
     /**
+     * Timestamp (epoch seconds) at which this message was pinned in its conversation, or {@code 0}
+     * when the message is not pinned. Conversation-global (visible to everyone).
+     *
+     * @return the pinned-at timestamp, or {@code 0} if not pinned
+     * @since <b>v5</b>
+     */
+    public long getPinnedAt() {
+        return pinnedAt;
+    }
+
+    public void setPinnedAt(long pinnedAt) {
+        this.pinnedAt = pinnedAt;
+    }
+
+    /**
+     * UID of the user who pinned this message, or {@link CometChatConstants.MessageKeys#PINNED_BY_SYSTEM}
+     * ({@code "app_system"}) for an admin / global pin. {@code null} when the message is not pinned.
+     * Single-pinner model: reflects the most recent pinner.
+     *
+     * @return the pinner UID, {@code "app_system"}, or {@code null}
+     * @since <b>v5</b>
+     */
+    public String getPinnedBy() {
+        return pinnedBy;
+    }
+
+    public void setPinnedBy(String pinnedBy) {
+        this.pinnedBy = pinnedBy;
+    }
+
+    /**
+     * Timestamp (epoch seconds) at which the current user saved this message, or {@code 0} when the
+     * message is not saved. Per-viewer: only present in the acting user's context.
+     *
+     * @return the saved-at timestamp, or {@code 0} if not saved
+     * @since <b>v5</b>
+     */
+    public long getSavedAt() {
+        return savedAt;
+    }
+
+    public void setSavedAt(long savedAt) {
+        this.savedAt = savedAt;
+    }
+
+    /**
+     * Whether this message is pinned in its conversation. Presence of {@code pinnedAt} IS the
+     * boolean — never compare the timestamp against {@code 0} directly.
+     *
+     * @return {@code true} if the message is pinned
+     * @since <b>v5</b>
+     */
+    public boolean isPinned() {
+        return pinnedAt > 0;
+    }
+
+    /**
+     * Whether this message is saved by the current user.
+     *
+     * @return {@code true} if the message is saved
+     * @since <b>v5</b>
+     */
+    public boolean isSaved() {
+        return savedAt > 0;
+    }
+
+    /**
+     * Whether the logged-in user is subscribed to this message's thread.
+     *
+     * <p>Meaningful on a thread's <b>parent</b> message, and only when the message came from a fetch
+     * that opted in with {@link com.cometchat.chat.core.MessagesRequest.MessagesRequestBuilder#withThreadSubscribed(boolean)}.
+     * The server is the sole authority: this is the flag exactly as it arrived, and the SDK neither
+     * caches nor infers it.
+     *
+     * <p><b>{@code false} means "the server did not tell me", not "the user is unsubscribed."</b> A
+     * message delivered over the socket carries no flag and therefore reads {@code false}. The one
+     * exception is the logged-in user's own message obtained from a fetch: because authoring a
+     * message subscribes you to its thread, a {@code false} there is an explicit unsubscribe and must
+     * be respected.
+     *
+     * @return {@code true} if the server reported the logged-in user as subscribed to this thread
+     * @since <b>v5</b>
+     */
+    public boolean isThreadSubscribed() {
+        return threadSubscribed;
+    }
+
+    public void setThreadSubscribed(boolean threadSubscribed) {
+        this.threadSubscribed = threadSubscribed;
+    }
+
+    /**
+     * Whether this message is pinned by the system (admin / global pin) rather than a user.
+     *
+     * @return {@code true} if pinned and {@code pinnedBy} is {@code "app_system"}
+     * @since <b>v5</b>
+     */
+    public boolean isSystemPinned() {
+        return isPinned() && com.cometchat.chat.constants.PinSaveContract.SYSTEM_PINNER_SENTINEL.equals(pinnedBy);
+    }
+
+    /**
+     * Single parse chokepoint for the pin/save attributes (PIN_SAVE_CONTRACT). This is the ONLY
+     * place the {@code pinnedAt}/{@code pinnedBy}/{@code savedAt} JSON keys are read; every subtype
+     * {@code fromJson} funnels through here.
+     * <p>
+     * Rules:
+     * <ul>
+     *   <li>Presence of the key IS the boolean — an absent key means not pinned/saved, never an error.</li>
+     *   <li>A wrong-typed value (string that isn't a number, object, array, JSON null) is treated as
+     *       missing and never throws.</li>
+     *   <li>The fields are always assigned (cleared when the key is absent), so an unpin/unsave
+     *       response — which omits the key — clears any stale value (Rule 5).</li>
+     * </ul>
+     *
+     * @param message    the message to populate; no-op if {@code null}
+     * @param jsonObject the message JSON; no-op if {@code null}
+     * @since <b>v5</b>
+     */
+    public static void applyPinSaveAttributes(BaseMessage message, JSONObject jsonObject) {
+        if (message == null || jsonObject == null) {
+            return;
+        }
+        // pinnedAt — absent/null/wrong-typed ⇒ 0 (not pinned).
+        if (jsonObject.has(CometChatConstants.MessageKeys.KEY_MESSAGE_PINNED_AT)
+                && !jsonObject.isNull(CometChatConstants.MessageKeys.KEY_MESSAGE_PINNED_AT)) {
+            message.setPinnedAt(jsonObject.optLong(CometChatConstants.MessageKeys.KEY_MESSAGE_PINNED_AT, 0));
+        } else {
+            message.setPinnedAt(0);
+        }
+        // pinnedBy — absent/null ⇒ null.
+        if (jsonObject.has(CometChatConstants.MessageKeys.KEY_MESSAGE_PINNED_BY)
+                && !jsonObject.isNull(CometChatConstants.MessageKeys.KEY_MESSAGE_PINNED_BY)) {
+            message.setPinnedBy(jsonObject.optString(CometChatConstants.MessageKeys.KEY_MESSAGE_PINNED_BY, null));
+        } else {
+            message.setPinnedBy(null);
+        }
+        // savedAt — absent/null/wrong-typed ⇒ 0 (not saved).
+        if (jsonObject.has(CometChatConstants.MessageKeys.KEY_MESSAGE_SAVED_AT)
+                && !jsonObject.isNull(CometChatConstants.MessageKeys.KEY_MESSAGE_SAVED_AT)) {
+            message.setSavedAt(jsonObject.optLong(CometChatConstants.MessageKeys.KEY_MESSAGE_SAVED_AT, 0));
+        } else {
+            message.setSavedAt(0);
+        }
+    }
+
+    /**
      * Returns the user list of mentioned users int the message.
      *
      * @return A user list who mentioned in the message.
@@ -750,6 +919,10 @@ public class BaseMessage extends AppEntity {
             ", hasMentionedMe=" + hasMentionedMe +
             ", rawMessage=" + rawMessage +
             ", reactions=" + reactions +
+            ", pinnedAt=" + pinnedAt +
+            ", pinnedBy='" + pinnedBy + '\'' +
+            ", savedAt=" + savedAt +
+            ", threadSubscribed=" + threadSubscribed +
             '}';
     }
 
@@ -800,6 +973,9 @@ public class BaseMessage extends AppEntity {
         if (replyCount != that.replyCount) return false;
         if (hasMentionedMe != that.hasMentionedMe) return false;
         if (unreadRepliesCount != that.unreadRepliesCount) return false;
+        if (pinnedAt != that.pinnedAt) return false;
+        if (savedAt != that.savedAt) return false;
+        if (threadSubscribed != that.threadSubscribed) return false;
 
         // String fields - use ContentEqualsHelper.stringsEqual()
         if (!ContentEqualsHelper.stringsEqual(muid, that.muid)) return false;
@@ -810,6 +986,7 @@ public class BaseMessage extends AppEntity {
         if (!ContentEqualsHelper.stringsEqual(deletedBy, that.deletedBy)) return false;
         if (!ContentEqualsHelper.stringsEqual(editedBy, that.editedBy)) return false;
         if (!ContentEqualsHelper.stringsEqual(conversationId, that.conversationId)) return false;
+        if (!ContentEqualsHelper.stringsEqual(pinnedBy, that.pinnedBy)) return false;
 
         // Object fields - use ContentEqualsHelper.objectsContentEqual()
         if (!ContentEqualsHelper.objectsContentEqual(sender, that.sender)) return false;

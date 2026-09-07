@@ -325,6 +325,20 @@ class WSConnection extends AbstractRTTConnection {
             case CometChatConstants.WSKeys.KEY_STREAMED_MESSAGE:
                 return CometChatStreamMessageEvent.fromJSON(mainObject);
         }
+        // Pin/save frames resolve through alias sets rather than switch cases: the backend fixed
+        // the payload shapes but not the envelope naming, so matching one literal type string
+        // here is exactly how these frames got silently dropped. Conversation pin is matched
+        // FIRST — both families use the bare word "pinned" as an action, and family membership
+        // must be decided by type before any action is read. See CometChatConversationPinEvent /
+        // CometChatPinSaveEvent.
+        CometChatEvent conversationPinEvent = CometChatConversationPinEvent.tryFromJSON(mainObject, type);
+        if (conversationPinEvent != null) {
+            return conversationPinEvent;
+        }
+        CometChatEvent pinSaveEvent = CometChatPinSaveEvent.tryFromJSON(mainObject, type);
+        if (pinSaveEvent != null) {
+            return pinSaveEvent;
+        }
         return null;
     }
 
@@ -384,6 +398,20 @@ class WSConnection extends AbstractRTTConnection {
             case CometChatConstants.WSKeys.KEY_STREAMED_MESSAGE:
                 CometChatStreamMessageEvent cometChatStreamMessageEvent = (CometChatStreamMessageEvent) cometChatEvent;
                 informAIAssistantListener(cometChatStreamMessageEvent.getEvent());
+                break;
+            case CometChatConstants.WSKeys.KEY_TYPE_MESSAGE_PIN:
+            case CometChatConstants.WSKeys.KEY_TYPE_MESSAGE_SAVE:
+                // The parser canonicalised the type and normalised the action, and the frame
+                // carries a full decorated message in body.message — NOT an Action envelope, so
+                // this must not route through the Action/actionOn path.
+                CometChatPinSaveEvent cometChatPinSaveEvent = (CometChatPinSaveEvent) cometChatEvent;
+                informPinSaveActionListener(cometChatPinSaveEvent.getAction(), cometChatPinSaveEvent.getMessage());
+                break;
+            case CometChatConstants.WSKeys.KEY_TYPE_CONVERSATION_PIN:
+                // Carries a Conversation, not a message — lands on ConversationListener, keyed
+                // separately all the way down so neither family can be delivered as the other.
+                CometChatConversationPinEvent cometChatConversationPinEvent = (CometChatConversationPinEvent) cometChatEvent;
+                informConversationPinActionListener(cometChatConversationPinEvent.getAction(), cometChatConversationPinEvent.getConversation());
                 break;
         }
     }
