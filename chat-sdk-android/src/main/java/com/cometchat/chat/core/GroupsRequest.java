@@ -229,12 +229,24 @@ public class GroupsRequest {
          *
          * @param searchKeyword keyword which developer wants to search in the Group list
          * @return GroupsRequestBuilder object when <code>build()</code> is called
-         * @version <b>v2</b>
-         * @since <b>v1</b>
+         * @since <b>5.0.7</b>
          */
-        public GroupsRequest.GroupsRequestBuilder setSearchKeyWord(String searchKeyword) {
+        public GroupsRequest.GroupsRequestBuilder setSearchKeyword(String searchKeyword) {
             this.searchKeyWord = searchKeyword;
             return this;
+        }
+
+        /**
+         * A method set Search user with specified name or <code>GUID</code> while fetching the list of Groups
+         *
+         * @param searchKeyword keyword which developer wants to search in the Group list
+         * @return GroupsRequestBuilder object when <code>build()</code> is called
+         * @deprecated Use {@link #setSearchKeyword(String)} instead — this spelling is the one
+         * outlier among the request builders and is kept only for backward compatibility.
+         */
+        @Deprecated
+        public GroupsRequest.GroupsRequestBuilder setSearchKeyWord(String searchKeyword) {
+            return setSearchKeyword(searchKeyword);
         }
 
         /**

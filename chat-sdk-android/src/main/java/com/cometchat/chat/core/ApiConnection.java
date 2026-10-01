@@ -2126,14 +2126,36 @@ class ApiConnection {
         return jsonArray;
     }
 
+    // Used ONLY by createGroupWithMembers. Group.toMap() flattens every value to a
+    // String, and getRequestBodyFromMap normally restores the JSON types on the way
+    // out; this composite (group + members) body is built by hand instead, so the
+    // same field typing has to be applied here. Group.toMap() emits exactly two
+    // non-plain fields: tags (array) and metadata (object). Keep in sync with the
+    // corresponding branches in getRequestBodyFromMap.
+    static void putTypedGroupField(JSONObject body, String key, String value) throws JSONException {
+        if (key.equalsIgnoreCase(CometChatConstants.UserKeys.USER_KEY_TAGS)) {
+            body.put(key, new JSONArray(value));
+        } else if (key.equalsIgnoreCase(CometChatConstants.MessageKeys.KEY_SEND_TEXT_METADATA)) {
+            body.put(key, new JSONObject(value));
+        } else {
+            body.put(key, value);
+        }
+    }
+
+    // The group half of createGroupWithMembers' composite body — extracted so the
+    // regression tests exercise the production construction, not a copy of it.
+    static JSONObject buildGroupBody(Group group) throws JSONException {
+        JSONObject body = new JSONObject();
+        for (Map.Entry<String, String> entry : group.toMap().entrySet()) {
+            putTypedGroupField(body, entry.getKey(), entry.getValue());
+        }
+        return body;
+    }
+
     void createGroupWithMembers(Group group, List<GroupMember> members, List<String> bannedUserIds, APIConnectionListener listener) {
         try {
-            JSONObject jsonObject = new JSONObject();
+            JSONObject jsonObject = buildGroupBody(group);
             JSONObject membersObject = new JSONObject();
-            for (Map.Entry<String, String> stringStringEntry : group.toMap().entrySet()) {
-                Map.Entry pair = (Map.Entry) stringStringEntry;
-                jsonObject.put((String) pair.getKey(), (String) pair.getValue());
-            }
             for (Map.Entry<String, JSONArray> stringStringEntry : getmembersMap(members, bannedUserIds).entrySet()) {
                 Map.Entry pair = (Map.Entry) stringStringEntry;
                 membersObject.put((String) pair.getKey(), (JSONArray) pair.getValue());

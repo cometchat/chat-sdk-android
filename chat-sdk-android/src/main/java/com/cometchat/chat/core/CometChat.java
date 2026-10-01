@@ -70,6 +70,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 
 /**
@@ -104,8 +105,17 @@ public final class CometChat {
     private static int getSettingsRetryCounter;
     private static ScheduledExecutorService reconnectExecutorServiceManualMode;
     private static ScheduledExecutorService callingExecutorService;
-    private static CallbackListener wsConnectListener;
-    private static CallbackListener wsDisconnectListener;
+    /**
+     * Listeners parked for the in-flight connect/disconnect.
+     *
+     * Held in an AtomicReference because several paths can complete the same call, from different
+     * threads — the WebSocket reader among them. Consumers must take the listener with
+     * {@code getAndSet(null)} so that taking it is also clearing it: a plain null-check followed by
+     * a separate assignment lets two threads both see a listener and deliver two terminal results
+     * for one call, and lets a path that forgets to clear leave a listener armed for the next one.
+     */
+    private static final AtomicReference<CallbackListener> wsConnectListener = new AtomicReference<>();
+    private static final AtomicReference<CallbackListener> wsDisconnectListener = new AtomicReference<>();
 
     private static void setupWSListeners() {
         DispatchController.getInstance().setMessageReceivedListener(messageReceivedListener);
@@ -185,9 +195,9 @@ public final class CometChat {
     private static DispatchController.ConnectionStatusListener connectionStatusListener = new DispatchController.ConnectionStatusListener() {
         @Override
         public void onDisconnected() {
-            if (wsDisconnectListener != null) {
-                wsDisconnectListener.onSuccess(getConnectionStatus());
-                wsDisconnectListener = null;
+            CallbackListener disconnectListener = wsDisconnectListener.getAndSet(null);
+            if (disconnectListener != null) {
+                disconnectListener.onSuccess(getConnectionStatus());
             }
             Iterator it = connectionListeners.entrySet().iterator();
             while (it.hasNext()) {
@@ -222,9 +232,9 @@ public final class CometChat {
 
         @Override
         public void onConnected() {
-            if (wsConnectListener != null) {
-                wsConnectListener.onSuccess(getConnectionStatus());
-                wsConnectListener = null;
+            CallbackListener connectListener = wsConnectListener.getAndSet(null);
+            if (connectListener != null) {
+                connectListener.onSuccess(getConnectionStatus());
             }
             Iterator it = connectionListeners.entrySet().iterator();
             while (it.hasNext()) {
@@ -258,13 +268,13 @@ public final class CometChat {
 
         @Override
         public void onConnectionError(final CometChatException error) {
-            if (wsConnectListener != null) {
-                wsConnectListener.onError(error);
-                wsConnectListener = null;
+            CallbackListener erroredConnectListener = wsConnectListener.getAndSet(null);
+            if (erroredConnectListener != null) {
+                erroredConnectListener.onError(error);
             }
-            if (wsDisconnectListener != null) {
-                wsDisconnectListener.onError(error);
-                wsDisconnectListener = null;
+            CallbackListener erroredDisconnectListener = wsDisconnectListener.getAndSet(null);
+            if (erroredDisconnectListener != null) {
+                erroredDisconnectListener.onError(error);
             }
             Iterator it = connectionListeners.entrySet().iterator();
             while (it.hasNext()) {
@@ -1162,9 +1172,10 @@ public final class CometChat {
         if (rttConnection != null) {
             rttConnection.disconnect();
         } else {
-            if (wsDisconnectListener != null) {
-                wsDisconnectListener.onError(new CometChatException(CometChatConstants.Errors.ERROR_RTT_CONNECTION,
-                                                                    CometChatConstants.Errors.ERROR_RTT_CONNECTION_MESSAGE));
+            CallbackListener pendingDisconnectListener = wsDisconnectListener.getAndSet(null);
+            if (pendingDisconnectListener != null) {
+                pendingDisconnectListener.onError(new CometChatException(CometChatConstants.Errors.ERROR_RTT_CONNECTION,
+                                                                        CometChatConstants.Errors.ERROR_RTT_CONNECTION_MESSAGE));
             }
             Logger.error(TAG, CometChatConstants.Errors.ERROR_RTT_CONNECTION_MESSAGE);
         }
@@ -1729,7 +1740,7 @@ public final class CometChat {
         } else {
             if (getLoggedInUser() != null) {
                 if (listener != null) {
-                    wsConnectListener = listener;
+                    wsConnectListener.set(listener);
                 }
                 if (isDeveloperCall) {
                     markExplicitConnect();
@@ -1791,7 +1802,7 @@ public final class CometChat {
         } else {
             if (getLoggedInUser() != null) {
                 if (listener != null) {
-                    wsDisconnectListener = listener;
+                    wsDisconnectListener.set(listener);
                 }
                 if (isDeveloperCall) {
                     markExplicitDisconnect();
@@ -9907,6 +9918,13 @@ public final class CometChat {
     public static void addUserListener(@NonNull String listenerID, @NonNull UserListener
         listener) {
         if (listenerID != null && !TextUtils.isEmpty(listenerID) && listener != null) {
+            if (appSettings != null && AppSettings.SUBSCRIPTION_TYPE_NONE.equals(appSettings.getSubscriptionType())) {
+                // Logger.info is unconditional — Logger.error is gated behind the internal enableLogs toggle.
+                Logger.info(TAG, "UserListener \"" + listenerID + "\" registered without a presence subscription — " +
+                    "onUserOnline/onUserOffline will never fire. Configure subscribePresenceForAllUsers(), " +
+                    "subscribePresenceForRoles() or subscribePresenceForFriends() on AppSettingsBuilder " +
+                    "(or chatSDK.presenceSubscription in cometchat-settings.json) before init().");
+            }
             userListeners.put(listenerID, listener);
         }
     }

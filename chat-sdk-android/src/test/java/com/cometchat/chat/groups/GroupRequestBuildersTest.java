@@ -45,7 +45,7 @@ public class GroupRequestBuildersTest {
         List<String> tags = Arrays.asList("public", "featured");
         GroupsRequest request = new GroupsRequest.GroupsRequestBuilder()
                 .setLimit(25)
-                .setSearchKeyWord("dev")
+                .setSearchKeyword("dev")
                 .joinedOnly(true)
                 .setTags(tags)
                 .withTags(true)
@@ -56,6 +56,20 @@ public class GroupRequestBuildersTest {
         assertTrue(request.isJoinedOnly());
         assertEquals(tags, request.getTags());
         assertTrue(request.isWithTags());
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
+    public void grp06_deprecatedSetSearchKeyWord_matchesNewSpelling() {
+        GroupsRequest viaDeprecated = new GroupsRequest.GroupsRequestBuilder()
+                .setSearchKeyWord("dev")
+                .build();
+        GroupsRequest viaNew = new GroupsRequest.GroupsRequestBuilder()
+                .setSearchKeyword("dev")
+                .build();
+
+        assertEquals("dev", viaDeprecated.getSearchKeyword());
+        assertEquals(viaNew.getSearchKeyword(), viaDeprecated.getSearchKeyword());
     }
 
     // ==================== GRP-09: group members ====================
